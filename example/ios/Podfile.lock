@@ -1,0 +1,22 @@
+PODS:
+  - Flutter (1.0.0)
+  - native_binder (0.0.1):
+    - Flutter
+
+DEPENDENCIES:
+  - Flutter (from `Flutter`)
+  - native_binder (from `.symlinks/plugins/native_binder/ios`)
+
+EXTERNAL SOURCES:
+  Flutter:
+    :path: Flutter
+  native_binder:
+    :path: ".symlinks/plugins/native_binder/ios"
+
+SPEC CHECKSUMS:
+  Flutter: e0871f40cf51350855a761d2e70bf5af5b9b5de7
+  native_binder: 35e6b0bc1adf88ebbb880964fc4a987aa91262a6
+
+PODFILE CHECKSUM: 4305caec6b40dde0ae97be1573c53de1882a07e5
+
+COCOAPODS: 1.16.2

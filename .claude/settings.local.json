@@ -1,0 +1,19 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(flutter test:*)",
+      "mcp__ide__getDiagnostics",
+      "Bash(flutter analyze:*)",
+      "Bash(flutter pub get:*)",
+      "Bash(flutter build:*)",
+      "Bash(flutter clean:*)",
+      "Bash(flutter devices:*)",
+      "Bash(flutter run:*)",
+      "Bash(pod install)",
+      "Bash(xcrun simctl shutdown:*)",
+      "Bash(xcrun simctl boot:*)"
+    ],
+    "deny": [],
+    "ask": []
+  }
+}

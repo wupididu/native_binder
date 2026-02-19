@@ -1,0 +1,10 @@
+# ninja log v5
+0	35	1771539755182781506	CMakeFiles/native_binder.dir/native_binder_jni.c.o	fb83f1387f9008c2
+35	80	1771539755227482643	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+0	42	1771541569542367558	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+0	68	1771541793882507527	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+0	60	1771542106175563913	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+1	82	1771542159705620532	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+0	83	1771542381276179250	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+0	74	1771542959720214513	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105
+1	73	1771543468442347857	/Users/avazshokiri/Development/projects/native_binder/example/build/native_binder/intermediates/cxx/Debug/2yr3a72q/obj/armeabi-v7a/libnative_binder.so	bf739a20fd217105

@@ -1,0 +1,2 @@
+/Users/avazshokiri/Development/projects/native_binder/example/android/app/.cxx/Debug/294r4s6a/x86_64/CMakeFiles/edit_cache.dir
+/Users/avazshokiri/Development/projects/native_binder/example/android/app/.cxx/Debug/294r4s6a/x86_64/CMakeFiles/rebuild_cache.dir

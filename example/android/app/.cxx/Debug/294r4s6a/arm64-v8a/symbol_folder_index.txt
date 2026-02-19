@@ -1,0 +1,1 @@
+/Users/avazshokiri/Development/projects/native_binder/example/build/app/intermediates/cxx/Debug/294r4s6a/obj/arm64-v8a
