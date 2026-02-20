@@ -20,6 +20,11 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
   bool _nullCalled = false;
   num? _addIntResult;
   num? _addDoubleResult;
+  String? _processUserInfoResult;
+  int? _squareResult;
+  double? _circleAreaResult;
+  bool? _invertBoolResult;
+  String? _reverseStringResult;
   String? _errorDisplay;
 
   @override
@@ -33,7 +38,7 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
     try {
       final result = NativeBinder.call<String>(
         'echo',
-        [_echoController.text.isEmpty ? null : _echoController.text],
+        _echoController.text.isEmpty ? null : _echoController.text,
       );
       setState(() {
         _echoResult = result;
@@ -128,6 +133,42 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
         _errorDisplay =
             'message: ${e.message}\ncode: ${e.code}\ndetails: ${e.details}';
       });
+    }
+  }
+
+  void _callPrimitiveArguments() {
+    if (!NativeBinder.isSupported) return;
+    try {
+      final square = NativeBinder.call<int>('square', 7);
+      final area = NativeBinder.call<double>('circleArea', 5.0);
+      final inverted = NativeBinder.call<bool>('invertBool', true);
+      final reversed = NativeBinder.call<String>('reverseString', 'Hello');
+      setState(() {
+        _squareResult = square;
+        _circleAreaResult = area;
+        _invertBoolResult = inverted;
+        _reverseStringResult = reversed;
+        _errorDisplay = null;
+      });
+    } on NativeBinderException catch (e) {
+      setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    }
+  }
+
+  void _callProcessUserInfo() {
+    if (!NativeBinder.isSupported) return;
+    try {
+      final result = NativeBinder.call<String>('processUserInfo', {
+        'name': 'Alice',
+        'age': 28,
+        'city': 'San Francisco',
+      });
+      setState(() {
+        _processUserInfoResult = result;
+        _errorDisplay = null;
+      });
+    } on NativeBinderException catch (e) {
+      setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
     }
   }
 
@@ -241,6 +282,25 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
             ),
           ),
           _Section(
+            title: 'Map as argument',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton(
+                  onPressed: supported ? _callProcessUserInfo : null,
+                  child: const Text(
+                    'processUserInfo({name: Alice, age: 28, city: SF})',
+                  ),
+                ),
+                if (_processUserInfoResult != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('Result: $_processUserInfoResult'),
+                  ),
+              ],
+            ),
+          ),
+          _Section(
             title: 'Null',
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -271,6 +331,33 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
                     padding: const EdgeInsets.only(top: 8),
                     child: Text(
                       '1+2 = $_addIntResult, 2.5+3.5 = $_addDoubleResult',
+                    ),
+                  ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'Primitive types as arguments',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                FilledButton(
+                  onPressed: supported ? _callPrimitiveArguments : null,
+                  child: const Text(
+                    'square(7), circleArea(5.0), invertBool(true), reverseString("Hello")',
+                  ),
+                ),
+                if (_squareResult != null ||
+                    _circleAreaResult != null ||
+                    _invertBoolResult != null ||
+                    _reverseStringResult != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text(
+                      'square(7) = $_squareResult\n'
+                      'circleArea(5.0) = ${_circleAreaResult?.toStringAsFixed(2)}\n'
+                      'invertBool(true) = $_invertBoolResult\n'
+                      'reverseString("Hello") = $_reverseStringResult',
                     ),
                   ),
               ],

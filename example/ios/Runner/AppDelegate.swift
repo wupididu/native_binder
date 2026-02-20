@@ -12,9 +12,7 @@ import native_binder
 
     // Register demo handlers to showcase native_binder functionality
     registerNativeBinderHandler("echo") { args in
-        if let list = args as? [Any?], !list.isEmpty {
-            return list[0]
-        }
+        // args is the value directly (String or nil)
         return args
     }
 
@@ -47,6 +45,59 @@ import native_binder
 
     registerNativeBinderHandler("triggerError") { _ in
         throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Demo error"])
+    }
+
+    // Single primitive argument examples
+    registerNativeBinderHandler("square") { args in
+        // args is an Int directly
+        guard let n = args as? Int else {
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "square expects an Int"])
+        }
+        return n * n
+    }
+
+    registerNativeBinderHandler("circleArea") { args in
+        // args is a Double directly (or Int that can convert)
+        let radius: Double
+        if let d = args as? Double {
+            radius = d
+        } else if let i = args as? Int {
+            radius = Double(i)
+        } else {
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "circleArea expects a Number"])
+        }
+        return Double.pi * radius * radius
+    }
+
+    registerNativeBinderHandler("invertBool") { args in
+        // args is a Bool directly
+        guard let b = args as? Bool else {
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "invertBool expects a Bool"])
+        }
+        return !b
+    }
+
+    registerNativeBinderHandler("reverseString") { args in
+        // args is a String directly
+        guard let s = args as? String else {
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "reverseString expects a String"])
+        }
+        return String(s.reversed())
+    }
+
+    registerNativeBinderHandler("processUserInfo") { args in
+        // args is the Map directly
+        guard let dict = args as? [String: Any?] else {
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "processUserInfo expects a Map"])
+        }
+        let name = dict["name"] as? String ?? "Unknown"
+        let age = dict["age"] as? Int ?? 0
+        let city = dict["city"] as? String
+        var result = "User: \(name), Age: \(age)"
+        if let city = city {
+            result += ", City: \(city)"
+        }
+        return result
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

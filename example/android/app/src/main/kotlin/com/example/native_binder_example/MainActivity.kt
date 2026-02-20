@@ -10,10 +10,8 @@ class MainActivity : FlutterActivity() {
 
         // Register demo handlers to showcase native_binder functionality
         NativeBinderBridge.register("echo") { args ->
-            when (args) {
-                is List<*> -> if (args.isNotEmpty()) args[0] else null
-                else -> args
-            }
+            // args is the value directly (String or null)
+            args
         }
 
         NativeBinderBridge.register("getCount") { _ -> 42 }
@@ -51,6 +49,56 @@ class MainActivity : FlutterActivity() {
 
         NativeBinderBridge.register("triggerError") { _ ->
             throw RuntimeException("Demo error")
+        }
+
+        // Single primitive argument examples
+        NativeBinderBridge.register("square") { args ->
+            // args is an Int directly
+            if (args !is Int) {
+                throw IllegalArgumentException("square expects an Int")
+            }
+            args * args
+        }
+
+        NativeBinderBridge.register("circleArea") { args ->
+            // args is a Double directly
+            val radius = when (args) {
+                is Double -> args
+                is Int -> args.toDouble()
+                else -> throw IllegalArgumentException("circleArea expects a Number")
+            }
+            Math.PI * radius * radius
+        }
+
+        NativeBinderBridge.register("invertBool") { args ->
+            // args is a Boolean directly
+            if (args !is Boolean) {
+                throw IllegalArgumentException("invertBool expects a Boolean")
+            }
+            !args
+        }
+
+        NativeBinderBridge.register("reverseString") { args ->
+            // args is a String directly
+            if (args !is String) {
+                throw IllegalArgumentException("reverseString expects a String")
+            }
+            args.reversed()
+        }
+
+        NativeBinderBridge.register("processUserInfo") { args ->
+            // args is the Map directly
+            if (args !is Map<*, *>) {
+                throw IllegalArgumentException("processUserInfo expects a Map")
+            }
+            val name = args["name"] as? String ?: "Unknown"
+            val age = args["age"] as? Int ?: 0
+            val city = args["city"] as? String
+            val result = StringBuilder("User: $name, Age: $age")
+            if (city != null) {
+                result.append(", City: $city")
+            }
+            result.toString()
         }
     }
 }
