@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import 'screens/native_binder_example_screen.dart';
+import 'screens/home_screen.dart';
 
 void main() {
   runApp(const NativeBinderExampleApp());
@@ -17,7 +17,7 @@ class NativeBinderExampleApp extends StatelessWidget {
         colorScheme: ColorScheme.fromSeed(seedColor: Colors.blue),
         useMaterial3: true,
       ),
-      home: const NativeBinderExampleScreen(),
+      home: const HomeScreen(),
     );
   }
 }

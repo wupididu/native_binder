@@ -10,6 +10,20 @@ import native_binder
   ) -> Bool {
     GeneratedPluginRegistrant.register(with: self)
 
+    // Setup MethodChannel for performance comparison
+    let controller = window?.rootViewController as! FlutterViewController
+    let perfChannel = FlutterMethodChannel(name: "native_binder_perf",
+                                           binaryMessenger: controller.binaryMessenger)
+    perfChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
+      if call.method == "perfTest" {
+        // Simple pass-through method for performance testing
+        let value = call.arguments as? Int ?? 0
+        result(value)
+      } else {
+        result(FlutterMethodNotImplemented)
+      }
+    }
+
     // Register demo handlers to showcase native_binder functionality
     registerNativeBinderHandler("echo") { args in
         // args is the value directly (String or nil)
@@ -119,6 +133,12 @@ import native_binder
             throw NSError(domain: "NativeBinder", code: -1,
                 userInfo: [NSLocalizedDescriptionKey: "Failed to call Dart: \(error.localizedDescription)"])
         }
+    }
+
+    // Performance test handler
+    registerNativeBinderHandler("perfTest") { args in
+        // Simple pass-through for performance testing
+        return args as? Int ?? 0
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

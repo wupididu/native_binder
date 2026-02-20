@@ -3,10 +3,26 @@ package com.example.native_binder_example
 import com.native_binder.NativeBinderBridge
 import io.flutter.embedding.android.FlutterActivity
 import io.flutter.embedding.engine.FlutterEngine
+import io.flutter.plugin.common.MethodChannel
 
 class MainActivity : FlutterActivity() {
+    private val PERF_CHANNEL = "native_binder_perf"
+
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
+
+        // Setup MethodChannel for performance comparison
+        MethodChannel(flutterEngine.dartExecutor.binaryMessenger, PERF_CHANNEL)
+            .setMethodCallHandler { call, result ->
+                when (call.method) {
+                    "perfTest" -> {
+                        // Simple pass-through method for performance testing
+                        val value = call.arguments as? Int ?: 0
+                        result.success(value)
+                    }
+                    else -> result.notImplemented()
+                }
+            }
 
         // Register demo handlers to showcase native_binder functionality
         NativeBinderBridge.register("echo") { args ->
@@ -113,6 +129,12 @@ class MainActivity : FlutterActivity() {
                 "  dartGreet: $greeting\n" +
                 "  dartMultiply(6,7): $product\n" +
                 "  dartProcessData: $processed"
+        }
+
+        // Performance test handler
+        NativeBinderBridge.register("perfTest") { args ->
+            // Simple pass-through for performance testing
+            args as? Int ?: 0
         }
     }
 }
