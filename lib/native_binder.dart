@@ -118,11 +118,12 @@ class NativeBinder {
     Pointer<Uint32> outLen,
   ) {
     try {
-      // Decode the incoming message (method + args)
+      // Decode single value [method, args] (same format as native sends)
       final msgBytes = msgPtr.asTypedList(len);
       final buffer = ReadBuffer(ByteData.sublistView(Uint8List.fromList(msgBytes)));
-      final method = _codec.readValue(buffer) as String;
-      final args = _codec.readValue(buffer);
+      final list = _codec.readValue(buffer) as List<Object?>;
+      final method = list.isNotEmpty ? list[0] as String : '';
+      final args = list.length > 1 ? list[1] : null;
 
       // Look up handler
       final handler = _dartHandlers[method];
@@ -158,7 +159,8 @@ class NativeBinder {
     }
   }
 
-  /// Encodes a response envelope for native code (allocates native memory).
+  /// Encodes a response envelope as a single codec list value:
+  /// success → [0, result], error → [1, code, message, details].
   static Pointer<Uint8> _encodeNativeResponse(
     Pointer<Uint32> outLen, {
     required bool success,
@@ -169,13 +171,9 @@ class NativeBinder {
   }) {
     final buffer = WriteBuffer();
     if (success) {
-      buffer.putUint8(0); // Success envelope
-      _codec.writeValue(buffer, value);
+      _codec.writeValue(buffer, [0, value]);
     } else {
-      buffer.putUint8(1); // Error envelope
-      _codec.writeValue(buffer, code);
-      _codec.writeValue(buffer, message);
-      _codec.writeValue(buffer, details);
+      _codec.writeValue(buffer, [1, code, message, details]);
     }
     final bytes = buffer.done();
     final result = bytes.buffer.asUint8List(bytes.offsetInBytes, bytes.lengthInBytes);
@@ -189,37 +187,40 @@ class NativeBinder {
     return outPtr;
   }
 
+  /// Encodes [method] and [arguments] as a single list value so native
+  /// can use Flutter's StandardMessageCodec.decode (one value) on iOS.
   static ByteData _encodeCall(String method, Object? arguments) {
     final buffer = WriteBuffer();
-    _codec.writeValue(buffer, method);
-    _codec.writeValue(buffer, arguments);
+    _codec.writeValue(buffer, [method, arguments]);
     return buffer.done();
   }
 
+  /// Decodes a response encoded as a single codec list:
+  /// success → [0, result], error → [1, code, message, details].
   static T? _decodeResponse<T>(ByteData envelope) {
     if (envelope.lengthInBytes == 0) {
       throw NativeBinderException('Empty response from native');
     }
     final buffer = ReadBuffer(envelope);
-    final kind = buffer.getUint8();
+    final list = _codec.readValue(buffer) as List<Object?>;
+    if (list.isEmpty) {
+      throw NativeBinderException('Empty response list from native');
+    }
+    final kind = list[0] as int;
     if (kind == 0) {
-      final result = _codec.readValue(buffer);
-      if (buffer.hasRemaining) {
-        throw NativeBinderException('Corrupted success envelope');
-      }
-      return result as T?;
+      return list.length > 1 ? list[1] as T? : null;
     }
     if (kind == 1) {
-      final code = _codec.readValue(buffer) as String?;
-      final message = _codec.readValue(buffer) as String?;
-      final details = _codec.readValue(buffer);
+      final code = list.length > 1 ? list[1] as String? : null;
+      final message = list.length > 2 ? list[2] as String? : null;
+      final details = list.length > 3 ? list[3] : null;
       throw NativeBinderException(
         message ?? code ?? 'Unknown native error',
         code: code,
         details: details,
       );
     }
-    throw NativeBinderException('Invalid response envelope (byte $kind)');
+    throw NativeBinderException('Invalid response envelope (kind $kind)');
   }
 }
 

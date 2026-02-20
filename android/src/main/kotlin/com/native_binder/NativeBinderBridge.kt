@@ -1,5 +1,6 @@
 package com.native_binder
 
+import java.io.ByteArrayOutputStream
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
@@ -47,44 +48,44 @@ object NativeBinderBridge {
     @JvmStatic
     @Suppress("UNCHECKED_CAST")
     fun <T> callDart(method: String, args: Any? = null): T? {
-        // Encode the call (method + args)
-        val stream = ByteArrayOutputStream()
-        StandardMessageCodec.writeValueToStream(stream, method)
-        StandardMessageCodec.writeValueToStream(stream, args)
-        val input = stream.toByteArray()
+        // Encode [method, args] as single value (same as Dart / iOS)
+        val callList = listOf(method, args)
+        val input = StandardMessageCodec.encodeMessage(callList)
 
-        // Call native, which forwards to Dart
         val response = callDartNative(input)
             ?: throw RuntimeException("Dart callback not registered or call failed")
 
-        // Decode the response envelope
-        val buffer = ByteBuffer.wrap(response).order(ByteOrder.LITTLE_ENDIAN)
         if (response.isEmpty()) throw RuntimeException("Empty response from Dart")
-
-        val kind = buffer.get().toInt()
+        val buffer = ByteBuffer.wrap(response).order(ByteOrder.LITTLE_ENDIAN)
+        val envelope = StandardMessageCodec.readValueFromBuffer(buffer) as? List<*>
+            ?: throw RuntimeException("Invalid response envelope from Dart")
+        val kind = (envelope.getOrNull(0) as? Number)?.toInt()
+            ?: throw RuntimeException("Invalid response envelope kind")
         return when (kind) {
-            0 -> StandardMessageCodec.readValueFromBuffer(buffer) as T?  // Success
+            0 -> envelope.getOrNull(1) as T?
             1 -> {
-                val code = StandardMessageCodec.readValueFromBuffer(buffer) as String?
-                val message = StandardMessageCodec.readValueFromBuffer(buffer) as String?
-                val details = StandardMessageCodec.readValueFromBuffer(buffer)
+                val code = envelope.getOrNull(1) as? String
+                val message = envelope.getOrNull(2) as? String
+                val details = envelope.getOrNull(3)
                 throw RuntimeException("Dart error: ${message ?: code} (code: $code, details: $details)")
             }
-            else -> throw RuntimeException("Invalid response envelope from Dart (byte $kind)")
+            else -> throw RuntimeException("Invalid response envelope from Dart (kind $kind)")
         }
     }
 
     /**
-     * Called from JNI. Input: StandardMessageCodec-encoded (methodName, args).
-     * Output: envelope byte 0 + encoded result, or byte 1 + code + message + details.
+     * Called from JNI. Input: single StandardMessageCodec value [methodName, args].
+     * Output: envelope byte 0 + encoded result, or byte 1 + encoded [code, message, details].
      */
     @JvmStatic
     fun handleCall(input: ByteArray): ByteArray {
         if (input.isEmpty()) return encodeError("invalid", "Empty input", null)
-        val buffer = ByteBuffer.wrap(input).order(ByteOrder.LITTLE_ENDIAN)
-        val method = StandardMessageCodec.readValueFromBuffer(buffer)
-        val args = if (buffer.hasRemaining()) StandardMessageCodec.readValueFromBuffer(buffer) else null
-        if (method !is String) return encodeError("invalid", "Method name must be String", null)
+        val decoded = StandardMessageCodec.readValueFromBuffer(
+            ByteBuffer.wrap(input).order(ByteOrder.LITTLE_ENDIAN)
+        ) as? List<*>
+            ?: return encodeError("invalid", "Decoded value must be [String, args]", null)
+        val method = decoded.getOrNull(0) as? String ?: return encodeError("invalid", "Method name must be String", null)
+        val args = decoded.getOrNull(1)
         val handler = handlers[method]
             ?: return encodeError("not_found", "No handler for method: $method", null)
         return try {
@@ -96,18 +97,10 @@ object NativeBinderBridge {
     }
 
     private fun encodeSuccess(result: Any?): ByteArray {
-        val stream = ByteArrayOutputStream()
-        stream.write(0)  // Success envelope marker
-        StandardMessageCodec.writeValueToStream(stream, result)
-        return stream.toByteArray()
+        return StandardMessageCodec.encodeMessage(listOf(0, result))
     }
 
     private fun encodeError(code: String, message: String?, details: Any?): ByteArray {
-        val stream = ByteArrayOutputStream()
-        stream.write(1)  // Error envelope marker
-        StandardMessageCodec.writeValueToStream(stream, code)
-        StandardMessageCodec.writeValueToStream(stream, message)
-        StandardMessageCodec.writeValueToStream(stream, details)
-        return stream.toByteArray()
+        return StandardMessageCodec.encodeMessage(listOf(1, code, message, details))
     }
 }

@@ -1,14 +1,18 @@
 import Foundation
+import Flutter
 
-typealias Handler = (Any?) throws -> Any?
+public typealias Handler = (Any?) throws -> Any?
 
 private var handlers: [String: Handler] = [:]
 
-func registerNativeBinderHandler(_ method: String, _ handler: @escaping Handler) {
+/// Flutter's StandardMessageCodec — same as Dart for type-safe interchange.
+private let codec = FlutterStandardMessageCodec.sharedInstance()
+
+public func registerNativeBinderHandler(_ method: String, _ handler: @escaping Handler) {
     handlers[method] = handler
 }
 
-func unregisterNativeBinderHandler(_ method: String) {
+public func unregisterNativeBinderHandler(_ method: String) {
     handlers.removeValue(forKey: method)
 }
 
@@ -18,15 +22,14 @@ func unregisterNativeBinderHandler(_ method: String) {
 /// ```swift
 /// let result = try callDartHandler("greet", args: ["World"]) as? String
 /// ```
-func callDartHandler(_ method: String, args: Any? = nil) throws -> Any? {
-    // Encode the call (method + args)
-    var stream = DataStream(data: Data())
-    StandardMessageCodec.writeValueToStream(method, to: &stream)
-    StandardMessageCodec.writeValueToStream(args, to: &stream)
-    let input = stream.data
+public func callDartHandler(_ method: String, args: Any? = nil) throws -> Any? {
+    // Encode [method, args] as single value (same format as Dart)
+    let callArray: [Any] = [method, args ?? NSNull()]
+    guard let input = codec.encode(callArray) as? Data else {
+        throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Failed to encode call"])
+    }
 
-    // Call Dart via native callback
-    guard let response = callDartFromNative(input) else {
+    guard let response = callDartFromNative(input), !response.isEmpty else {
         throw NSError(
             domain: "NativeBinder",
             code: -1,
@@ -34,32 +37,24 @@ func callDartHandler(_ method: String, args: Any? = nil) throws -> Any? {
         )
     }
 
-    // Decode the response envelope
-    guard !response.isEmpty else {
-        throw NSError(
-            domain: "NativeBinder",
-            code: -2,
-            userInfo: [NSLocalizedDescriptionKey: "Empty response from Dart"]
-        )
+    guard let envelope = codec.decode(response) as? [Any?], !envelope.isEmpty,
+          let kind = (envelope[0] as? NSNumber)?.intValue else {
+        throw NSError(domain: "NativeBinder", code: -4, userInfo: [NSLocalizedDescriptionKey: "Invalid response envelope from Dart"])
     }
 
-    let kind = response[0]
-    let payload = response.count > 1 ? response.subdata(in: 1..<response.count) : Data()
-
     switch kind {
-    case 0:  // Success
-        let (result, _) = StandardMessageCodec.decodeFirstValue(payload)
-        return result
-    case 1:  // Error
-        let (code, rest1) = StandardMessageCodec.decodeFirstValue(payload)
-        let (message, rest2) = StandardMessageCodec.decodeFirstValue(rest1)
-        let (details, _) = StandardMessageCodec.decodeFirstValue(rest2)
+    case 0:
+        return envelope.count > 1 && !(envelope[1] is NSNull) ? envelope[1] : nil
+    case 1:
+        let codeStr = envelope.count > 1 ? envelope[1] as? String : nil
+        let message = envelope.count > 2 ? envelope[2] as? String : nil
+        let details = envelope.count > 3 ? envelope[3] : nil
         throw NSError(
             domain: "NativeBinder",
             code: -3,
             userInfo: [
-                NSLocalizedDescriptionKey: (message as? String) ?? (code as? String) ?? "Unknown Dart error",
-                "code": code ?? NSNull(),
+                NSLocalizedDescriptionKey: message ?? codeStr ?? "Unknown Dart error",
+                "code": codeStr ?? NSNull(),
                 "details": details ?? NSNull()
             ]
         )
@@ -67,7 +62,7 @@ func callDartHandler(_ method: String, args: Any? = nil) throws -> Any? {
         throw NSError(
             domain: "NativeBinder",
             code: -4,
-            userInfo: [NSLocalizedDescriptionKey: "Invalid response envelope from Dart (byte \(kind))"]
+            userInfo: [NSLocalizedDescriptionKey: "Invalid response envelope from Dart (kind \(kind))"]
         )
     }
 }
@@ -76,11 +71,12 @@ func handleCall(_ input: Data) -> Data {
     guard !input.isEmpty else {
         return encodeError(code: "invalid", message: "Empty input", details: nil)
     }
-    let (method, rest) = StandardMessageCodec.decodeFirstValue(input)
-    let (args, _) = StandardMessageCodec.decodeFirstValue(rest)
-    guard let methodName = method as? String else {
-        return encodeError(code: "invalid", message: "Method name must be String", details: nil)
+    guard let decoded = codec.decode(input) as? [Any],
+          let methodName = decoded.first as? String else {
+        return encodeError(code: "invalid", message: "Decoded value must be [String, args]", details: nil)
     }
+    let args: Any? = decoded.count > 1 ? (decoded[1] is NSNull ? nil : decoded[1]) : nil
+
     guard let handler = handlers[methodName] else {
         return encodeError(code: "not_found", message: "No handler for method: \(methodName)", details: nil)
     }
@@ -93,17 +89,11 @@ func handleCall(_ input: Data) -> Data {
 }
 
 private func encodeSuccess(_ result: Any?) -> Data {
-    var stream = DataStream(data: Data())
-    stream.write(0)  // Success envelope marker
-    StandardMessageCodec.writeValueToStream(result, to: &stream)
-    return stream.data
+    let envelope: [Any] = [0, result ?? NSNull()]
+    return (codec.encode(envelope) as? Data) ?? Data()
 }
 
 private func encodeError(code: String, message: String?, details: Any?) -> Data {
-    var stream = DataStream(data: Data())
-    stream.write(1)  // Error envelope marker
-    StandardMessageCodec.writeValueToStream(code, to: &stream)
-    StandardMessageCodec.writeValueToStream(message, to: &stream)
-    StandardMessageCodec.writeValueToStream(details, to: &stream)
-    return stream.data
+    let envelope: [Any] = [1, code, message ?? NSNull(), details ?? NSNull()]
+    return (codec.encode(envelope) as? Data) ?? Data()
 }

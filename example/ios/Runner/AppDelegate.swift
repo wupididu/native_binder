@@ -17,7 +17,7 @@ import native_binder
     perfChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
       if call.method == "perfTest" {
         // Simple pass-through method for performance testing
-        let value = call.arguments as? Int ?? 0
+        let value = (call.arguments as? NSNumber)?.intValue ?? 0
         result(value)
       } else {
         result(FlutterMethodNotImplemented)
@@ -43,18 +43,18 @@ import native_binder
     registerNativeBinderHandler("getNull") { _ in nil as Any? }
 
     registerNativeBinderHandler("add") { args in
-        guard let list = args as? [Any?], list.count >= 2 else {
+        guard let list = args as? [Any?], list.count >= 2,
+              let a = list[0] as? NSNumber, let b = list[1] as? NSNumber else {
             throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects a List of two numbers"])
         }
-        let a = list[0]
-        let b = list[1]
-        if let ai = a as? Int, let bi = b as? Int {
+        if a === kCFBooleanTrue || a === kCFBooleanFalse || b === kCFBooleanTrue || b === kCFBooleanFalse {
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects two numbers"])
+        }
+        let ai = a.intValue, bi = b.intValue
+        if a.doubleValue == Double(ai) && b.doubleValue == Double(bi) {
             return ai + bi
         }
-        if let an = a as? NSNumber, let bn = b as? NSNumber {
-            return an.doubleValue + bn.doubleValue
-        }
-        throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects two numbers"])
+        return a.doubleValue + b.doubleValue
     }
 
     registerNativeBinderHandler("triggerError") { _ in
@@ -63,32 +63,25 @@ import native_binder
 
     // Single primitive argument examples
     registerNativeBinderHandler("square") { args in
-        // args is an Int directly
-        guard let n = args as? Int else {
+        guard let n = args as? NSNumber else {
             throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "square expects an Int"])
         }
-        return n * n
+        return n.intValue * n.intValue
     }
 
     registerNativeBinderHandler("circleArea") { args in
-        // args is a Double directly (or Int that can convert)
-        let radius: Double
-        if let d = args as? Double {
-            radius = d
-        } else if let i = args as? Int {
-            radius = Double(i)
-        } else {
+        guard let n = args as? NSNumber else {
             throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "circleArea expects a Number"])
         }
+        let radius = n.doubleValue
         return Double.pi * radius * radius
     }
 
     registerNativeBinderHandler("invertBool") { args in
-        // args is a Bool directly
-        guard let b = args as? Bool else {
+        guard let n = args as? NSNumber else {
             throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "invertBool expects a Bool"])
         }
-        return !b
+        return !(n.boolValue)
     }
 
     registerNativeBinderHandler("reverseString") { args in
@@ -100,12 +93,11 @@ import native_binder
     }
 
     registerNativeBinderHandler("processUserInfo") { args in
-        // args is the Map directly
-        guard let dict = args as? [String: Any?] else {
+        guard let dict = args as? [String: Any] else {
             throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "processUserInfo expects a Map"])
         }
         let name = dict["name"] as? String ?? "Unknown"
-        let age = dict["age"] as? Int ?? 0
+        let age = (dict["age"] as? NSNumber)?.intValue ?? 0
         let city = dict["city"] as? String
         var result = "User: \(name), Age: \(age)"
         if let city = city {
@@ -137,8 +129,7 @@ import native_binder
 
     // Performance test handler
     registerNativeBinderHandler("perfTest") { args in
-        // Simple pass-through for performance testing
-        return args as? Int ?? 0
+        return (args as? NSNumber)?.intValue ?? 0
     }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)

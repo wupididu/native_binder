@@ -1,7 +1,6 @@
 import Foundation
 
-// Function pointer type for Dart callback
-typealias DartBinderCallFunc = @convention(c) (
+public typealias DartBinderCallFunc = @convention(c) (
     UnsafePointer<UInt8>?,
     UInt32,
     UnsafeMutablePointer<UInt32>?
