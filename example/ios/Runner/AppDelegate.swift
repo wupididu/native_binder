@@ -15,11 +15,13 @@ import native_binder
     let perfChannel = FlutterMethodChannel(name: "native_binder_perf",
                                            binaryMessenger: controller.binaryMessenger)
     perfChannel.setMethodCallHandler { (call: FlutterMethodCall, result: @escaping FlutterResult) in
-      if call.method == "perfTest" {
-        // Simple pass-through method for performance testing
+      switch call.method {
+      case "perfTest":
         let value = (call.arguments as? NSNumber)?.intValue ?? 0
         result(value)
-      } else {
+      case "perfEchoString", "perfEchoList", "perfEchoMap":
+        result(call.arguments)
+      default:
         result(FlutterMethodNotImplemented)
       }
     }
@@ -131,6 +133,11 @@ import native_binder
     registerNativeBinderHandler("perfTest") { args in
         return (args as? NSNumber)?.intValue ?? 0
     }
+
+    // Large data performance test handlers (echo back the payload)
+    registerNativeBinderHandler("perfEchoString") { args in return args }
+    registerNativeBinderHandler("perfEchoList") { args in return args }
+    registerNativeBinderHandler("perfEchoMap") { args in return args }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

@@ -16,10 +16,12 @@ class MainActivity : FlutterActivity() {
             .setMethodCallHandler { call, result ->
                 when (call.method) {
                     "perfTest" -> {
-                        // Simple pass-through method for performance testing
                         val value = call.arguments as? Int ?: 0
                         result.success(value)
                     }
+                    "perfEchoString" -> result.success(call.arguments)
+                    "perfEchoList" -> result.success(call.arguments)
+                    "perfEchoMap" -> result.success(call.arguments)
                     else -> result.notImplemented()
                 }
             }
@@ -133,8 +135,12 @@ class MainActivity : FlutterActivity() {
 
         // Performance test handler
         NativeBinderBridge.register("perfTest") { args ->
-            // Simple pass-through for performance testing
             args as? Int ?: 0
         }
+
+        // Large data performance test handlers (echo back the payload)
+        NativeBinderBridge.register("perfEchoString") { args -> args }
+        NativeBinderBridge.register("perfEchoList") { args -> args }
+        NativeBinderBridge.register("perfEchoMap") { args -> args }
     }
 }
