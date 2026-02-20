@@ -1,8 +1,7 @@
 package com.native_binder
 
-import java.io.ByteArrayOutputStream
+import io.flutter.plugin.common.StandardMessageCodec
 import java.nio.ByteBuffer
-import java.nio.ByteOrder
 
 /**
  * Entry point for JNI: receives encoded (method, args), dispatches to registered handlers,
@@ -11,6 +10,7 @@ import java.nio.ByteOrder
 object NativeBinderBridge {
 
     private val handlers = mutableMapOf<String, (Any?) -> Any?>()
+    private val codec = StandardMessageCodec.INSTANCE
 
     init {
         System.loadLibrary("native_binder")
@@ -48,16 +48,14 @@ object NativeBinderBridge {
     @JvmStatic
     @Suppress("UNCHECKED_CAST")
     fun <T> callDart(method: String, args: Any? = null): T? {
-        // Encode [method, args] as single value (same as Dart / iOS)
         val callList = listOf(method, args)
-        val input = StandardMessageCodec.encodeMessage(callList)
+        val input = encodeToByteArray(callList)
 
         val response = callDartNative(input)
             ?: throw RuntimeException("Dart callback not registered or call failed")
 
         if (response.isEmpty()) throw RuntimeException("Empty response from Dart")
-        val buffer = ByteBuffer.wrap(response).order(ByteOrder.LITTLE_ENDIAN)
-        val envelope = StandardMessageCodec.readValueFromBuffer(buffer) as? List<*>
+        val envelope = decodeFromByteArray(response) as? List<*>
             ?: throw RuntimeException("Invalid response envelope from Dart")
         val kind = (envelope.getOrNull(0) as? Number)?.toInt()
             ?: throw RuntimeException("Invalid response envelope kind")
@@ -80,9 +78,7 @@ object NativeBinderBridge {
     @JvmStatic
     fun handleCall(input: ByteArray): ByteArray {
         if (input.isEmpty()) return encodeError("invalid", "Empty input", null)
-        val decoded = StandardMessageCodec.readValueFromBuffer(
-            ByteBuffer.wrap(input).order(ByteOrder.LITTLE_ENDIAN)
-        ) as? List<*>
+        val decoded = decodeFromByteArray(input) as? List<*>
             ?: return encodeError("invalid", "Decoded value must be [String, args]", null)
         val method = decoded.getOrNull(0) as? String ?: return encodeError("invalid", "Method name must be String", null)
         val args = decoded.getOrNull(1)
@@ -96,11 +92,23 @@ object NativeBinderBridge {
         }
     }
 
+    private fun encodeToByteArray(value: Any?): ByteArray {
+        val buffer = codec.encodeMessage(value) ?: return ByteArray(0)
+        buffer.flip()
+        val bytes = ByteArray(buffer.remaining())
+        buffer.get(bytes)
+        return bytes
+    }
+
+    private fun decodeFromByteArray(bytes: ByteArray): Any? {
+        return codec.decodeMessage(ByteBuffer.wrap(bytes))
+    }
+
     private fun encodeSuccess(result: Any?): ByteArray {
-        return StandardMessageCodec.encodeMessage(listOf(0, result))
+        return encodeToByteArray(listOf(0, result))
     }
 
     private fun encodeError(code: String, message: String?, details: Any?): ByteArray {
-        return StandardMessageCodec.encodeMessage(listOf(1, code, message, details))
+        return encodeToByteArray(listOf(1, code, message, details))
     }
 }

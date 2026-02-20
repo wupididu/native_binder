@@ -35,10 +35,9 @@ native_binder is a Flutter plugin that enables **synchronous bidirectional commu
 - **lib/src/ffi/library_loader.dart**: Loads `libnative_binder.so` (Android) or `DynamicLibrary.process()` (iOS)
 - **android/src/main/cpp/native_binder_jni.c**: C ABI implementation using JNI
 - **android/src/main/kotlin/com/native_binder/NativeBinderBridge.kt**: Method handler registry (Android)
-- **android/src/main/kotlin/com/native_binder/StandardMessageCodec.kt**: Kotlin codec implementation
 - **ios/Classes/NativeBinderABI.swift**: C ABI implementation (`@_cdecl` exports)
 - **ios/Classes/NativeBinderBridge.swift**: Method handler registry (iOS)
-- **iOS**: Uses Flutter's `FlutterStandardMessageCodec` (no custom codec)
+- Both platforms use Flutter's `StandardMessageCodec` (no custom codec): `io.flutter.plugin.common.StandardMessageCodec` on Android, `FlutterStandardMessageCodec` on iOS
 
 ### Data Types
 
