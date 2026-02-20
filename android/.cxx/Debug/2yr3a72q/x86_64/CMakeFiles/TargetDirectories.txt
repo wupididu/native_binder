@@ -1,3 +1,0 @@
-/Users/avazshokiri/Development/projects/native_binder/android/.cxx/Debug/2yr3a72q/x86_64/CMakeFiles/native_binder.dir
-/Users/avazshokiri/Development/projects/native_binder/android/.cxx/Debug/2yr3a72q/x86_64/CMakeFiles/edit_cache.dir
-/Users/avazshokiri/Development/projects/native_binder/android/.cxx/Debug/2yr3a72q/x86_64/CMakeFiles/rebuild_cache.dir
