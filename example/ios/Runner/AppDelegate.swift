@@ -100,6 +100,27 @@ import native_binder
         return result
     }
 
+    // Native → Dart call demonstration
+    registerNativeBinderHandler("testDartCallback") { _ in
+        do {
+            // Call Dart handlers from Swift
+            let greeting = try callDartHandler("dartGreet", args: ["Swift"]) as? String ?? ""
+            let product = try callDartHandler("dartMultiply", args: [6, 7]) as? NSNumber ?? 0
+            let processed = try callDartHandler("dartProcessData",
+                args: ["x": 1, "y": 2, "z": 3]) as? [String: Any] ?? [:]
+
+            return """
+            Swift called Dart:
+              dartGreet: \(greeting)
+              dartMultiply(6,7): \(product)
+              dartProcessData: \(processed)
+            """
+        } catch {
+            throw NSError(domain: "NativeBinder", code: -1,
+                userInfo: [NSLocalizedDescriptionKey: "Failed to call Dart: \(error.localizedDescription)"])
+        }
+    }
+
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }
 }

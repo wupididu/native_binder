@@ -12,6 +12,7 @@ class NativeBinderExampleScreen extends StatefulWidget {
 class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
   final TextEditingController _echoController = TextEditingController();
   String? _echoResult;
+  String? _nativeToDartResult;
   int? _countResult;
   double? _doubleResult;
   bool? _boolResult;
@@ -28,8 +29,40 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
   String? _errorDisplay;
 
   @override
+  void initState() {
+    super.initState();
+    // Initialize bidirectional binding
+    NativeBinder.initialize();
+
+    // Register Dart handlers that native code can call
+    NativeBinder.register('dartGreet', (args) {
+      final name = (args as List?)?[0] as String? ?? 'Unknown';
+      return 'Hello from Dart, $name!';
+    });
+
+    NativeBinder.register('dartMultiply', (args) {
+      final list = args as List;
+      final a = list[0] as num;
+      final b = list[1] as num;
+      return a * b;
+    });
+
+    NativeBinder.register('dartProcessData', (args) {
+      final data = args as Map;
+      return {
+        'processed': true,
+        'count': data.length,
+        'keys': data.keys.toList(),
+      };
+    });
+  }
+
+  @override
   void dispose() {
     _echoController.dispose();
+    NativeBinder.unregister('dartGreet');
+    NativeBinder.unregister('dartMultiply');
+    NativeBinder.unregister('dartProcessData');
     super.dispose();
   }
 
@@ -165,6 +198,20 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
       });
       setState(() {
         _processUserInfoResult = result;
+        _errorDisplay = null;
+      });
+    } on NativeBinderException catch (e) {
+      setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    }
+  }
+
+  void _triggerNativeToDartCall() {
+    if (!NativeBinder.isSupported) return;
+    try {
+      // This calls a native method that will in turn call back to Dart
+      final result = NativeBinder.call<String>('testDartCallback');
+      setState(() {
+        _nativeToDartResult = result;
         _errorDisplay = null;
       });
     } on NativeBinderException catch (e) {
@@ -380,6 +427,31 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
                   ),
                   child: const Text('Unknown method'),
                 ),
+              ],
+            ),
+          ),
+          _Section(
+            title: 'Native → Dart calls (reverse direction)',
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.stretch,
+              children: [
+                const Text(
+                  'Native code calls back to Dart handlers registered above',
+                  style: TextStyle(fontSize: 12, fontStyle: FontStyle.italic),
+                ),
+                const SizedBox(height: 12),
+                FilledButton(
+                  onPressed: supported ? _triggerNativeToDartCall : null,
+                  style: FilledButton.styleFrom(
+                    backgroundColor: Colors.purple,
+                  ),
+                  child: const Text('Test Native → Dart'),
+                ),
+                if (_nativeToDartResult != null)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 8),
+                    child: Text('Result: $_nativeToDartResult'),
+                  ),
               ],
             ),
           ),

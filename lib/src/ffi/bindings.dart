@@ -26,6 +26,30 @@ typedef NativeBinderCallDart = Pointer<Uint8> Function(
 typedef NativeBinderFreeNative = Void Function(Pointer<Uint8> ptr);
 typedef NativeBinderFreeDart = void Function(Pointer<Uint8> ptr);
 
+/// C ABI for calling from native to Dart (reverse direction).
+/// Native code encodes method + args, Dart dispatcher looks up handler,
+/// executes it, and returns encoded result.
+typedef DartBinderCallNative = Pointer<Uint8> Function(
+  Pointer<Uint8> msg,
+  Uint32 len,
+  Pointer<Uint32> outLen,
+);
+
+typedef DartBinderCallDart = Pointer<Uint8> Function(
+  Pointer<Uint8> msg,
+  int len,
+  Pointer<Uint32> outLen,
+);
+
+/// Register the Dart callback with the native library.
+typedef DartBinderRegisterNative = Void Function(
+  Pointer<NativeFunction<DartBinderCallNative>> callback,
+);
+
+typedef DartBinderRegisterDart = void Function(
+  Pointer<NativeFunction<DartBinderCallNative>> callback,
+);
+
 /// Copies [message] into native memory, calls native_binder_call, returns result as Uint8List or null.
 /// Caller does not need to free the result; this function handles native_binder_free.
 Uint8List? callNative(DynamicLibrary lib, Uint8List message) {

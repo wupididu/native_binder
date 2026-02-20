@@ -100,5 +100,19 @@ class MainActivity : FlutterActivity() {
             }
             result.toString()
         }
+
+        // Native → Dart call demonstration
+        NativeBinderBridge.register("testDartCallback") { _ ->
+            // Call Dart handlers from Kotlin
+            val greeting = NativeBinderBridge.callDart<String>("dartGreet", listOf("Kotlin"))
+            val product = NativeBinderBridge.callDart<Number>("dartMultiply", listOf(6, 7))
+            val processed = NativeBinderBridge.callDart<Map<*, *>>("dartProcessData",
+                mapOf("x" to 1, "y" to 2, "z" to 3))
+
+            "Kotlin called Dart:\n" +
+                "  dartGreet: $greeting\n" +
+                "  dartMultiply(6,7): $product\n" +
+                "  dartProcessData: $processed"
+        }
     }
 }

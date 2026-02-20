@@ -4,7 +4,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Overview
 
-native_binder is a Flutter plugin that enables **synchronous** bidirectional communication between Dart and native code (Kotlin on Android, Swift on iOS) without using MethodChannel. It uses FFI and a shared C ABI with Flutter's StandardMessageCodec for type-safe data interchange.
+native_binder is a Flutter plugin that enables **synchronous bidirectional communication** between Dart and native code (Kotlin on Android, Swift on iOS) without using MethodChannel. It uses FFI and a shared C ABI with Flutter's StandardMessageCodec for type-safe data interchange.
 
 ## Architecture
 
@@ -18,6 +18,15 @@ native_binder is a Flutter plugin that enables **synchronous** bidirectional com
    - **iOS**: Swift direct (NativeBinderBridge.swift)
 4. Dispatcher looks up handler by method name, executes, returns encoded result
 5. Result flows back to Dart (success envelope: byte 0 + value, error envelope: byte 1 + code + message + details)
+
+**Native → Dart:**
+1. Native encodes method name + arguments using StandardMessageCodec
+2. Calls Dart via FFI function pointer (registered via `dart_binder_register`)
+   - **Android**: Kotlin → JNI (`callDartNative`) → Dart callback
+   - **iOS**: Swift → Dart callback direct
+3. Dart dispatcher looks up registered handler, executes it
+4. Returns encoded result to native (success/error envelope)
+5. Native decodes and returns to caller
 
 ### Key Components
 
@@ -62,10 +71,16 @@ Native C code is compiled automatically by Gradle using CMake (android/src/main/
 **iOS:**
 Swift code is compiled when building via Xcode or `flutter build ios`.
 
-## Adding New Native Methods
+## Using Native Binder
 
-### Android
-In your plugin's `onAttachedToEngine`:
+### Dart → Native Calls
+
+**Calling native from Dart:**
+```dart
+final result = NativeBinder.call<String>('myMethod', ['arg1', 'arg2']);
+```
+
+**Registering native handlers (Android):**
 ```kotlin
 NativeBinderBridge.register("myMethod") { args ->
     // args is decoded (List, Map, primitives, etc.)
@@ -74,8 +89,7 @@ NativeBinderBridge.register("myMethod") { args ->
 }
 ```
 
-### iOS
-In your plugin's `register(with:)`:
+**Registering native handlers (iOS):**
 ```swift
 registerNativeBinderHandler("myMethod") { args in
     // args is Any? (List, Map, primitives, etc.)
@@ -84,17 +98,46 @@ registerNativeBinderHandler("myMethod") { args in
 }
 ```
 
-### Dart
+### Native → Dart Calls
+
+**Initializing bidirectional binding:**
 ```dart
-final result = NativeBinder.call<String>('myMethod', ['arg1', 'arg2']);
+// Must be called before native can call Dart
+NativeBinder.initialize();
+```
+
+**Registering Dart handlers:**
+```dart
+NativeBinder.register('dartMethod', (args) {
+    // args is dynamic (List, Map, primitives, null)
+    // return any supported type, or throw for error
+    return 'Hello from Dart!';
+});
+```
+
+**Calling Dart from native (Android):**
+```kotlin
+val result = NativeBinderBridge.callDart<String>("dartMethod", listOf("arg1", "arg2"))
+// throws RuntimeException on error
+```
+
+**Calling Dart from native (iOS):**
+```swift
+let result = try callDartHandler("dartMethod", args: ["arg1", "arg2"]) as? String
+// throws NSError on error
 ```
 
 ## Important Notes
 
-- **Synchronous blocking**: Heavy work on the calling thread will freeze the Dart isolate. Use this for fast native operations only.
+- **Synchronous blocking**: All calls (Dart→Native and Native→Dart) are synchronous and block the calling thread. Heavy work will freeze the Dart isolate or native thread. Use this for fast operations only.
+- **Initialization**: For Native→Dart calls, you must call `NativeBinder.initialize()` once before native code can invoke Dart handlers.
 - **Supported platforms**: Android and iOS only. `NativeBinder.isSupported` is false elsewhere.
-- **Memory management**: Native side allocates response buffer, Dart FFI automatically calls `native_binder_free` after copying.
-- **Error handling**: Native handlers can throw (Kotlin) or throw NSError (Swift). Dart receives `NativeBinderException` with code/message/details.
+- **Memory management**:
+  - Dart→Native: Native allocates response, Dart FFI calls `native_binder_free` after copying.
+  - Native→Dart: Dart allocates response, native frees it immediately after copying.
+- **Error handling**:
+  - Dart→Native: Native throws → Dart receives `NativeBinderException` with code/message/details.
+  - Native→Dart: Dart throws → Native receives exception (RuntimeException on Android, NSError on iOS).
 - **No MethodChannel**: This plugin intentionally bypasses MethodChannel for zero-overhead synchronous calls.
 
 ## Code Style

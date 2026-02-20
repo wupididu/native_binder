@@ -11,6 +11,17 @@ object NativeBinderBridge {
 
     private val handlers = mutableMapOf<String, (Any?) -> Any?>()
 
+    init {
+        System.loadLibrary("native_binder")
+    }
+
+    /**
+     * Native method that calls into Dart via registered callback.
+     * Returns encoded response or null if Dart callback is not registered.
+     */
+    @JvmStatic
+    private external fun callDartNative(input: ByteArray): ByteArray?
+
     /**
      * Register a handler for [method]. The handler receives decoded args (List, Map, primitives)
      * and should return a value of the same types, or throw to return an error.
@@ -23,6 +34,44 @@ object NativeBinderBridge {
     @JvmStatic
     fun unregister(method: String) {
         handlers.remove(method)
+    }
+
+    /**
+     * Calls a Dart handler from Kotlin. Returns the decoded result or throws if the call fails.
+     *
+     * Example:
+     * ```kotlin
+     * val result = NativeBinderBridge.callDart<String>("greet", listOf("World"))
+     * ```
+     */
+    @JvmStatic
+    @Suppress("UNCHECKED_CAST")
+    fun <T> callDart(method: String, args: Any? = null): T? {
+        // Encode the call (method + args)
+        val stream = ByteArrayOutputStream()
+        StandardMessageCodec.writeValueToStream(stream, method)
+        StandardMessageCodec.writeValueToStream(stream, args)
+        val input = stream.toByteArray()
+
+        // Call native, which forwards to Dart
+        val response = callDartNative(input)
+            ?: throw RuntimeException("Dart callback not registered or call failed")
+
+        // Decode the response envelope
+        val buffer = ByteBuffer.wrap(response).order(ByteOrder.LITTLE_ENDIAN)
+        if (response.isEmpty()) throw RuntimeException("Empty response from Dart")
+
+        val kind = buffer.get().toInt()
+        return when (kind) {
+            0 -> StandardMessageCodec.readValueFromBuffer(buffer) as T?  // Success
+            1 -> {
+                val code = StandardMessageCodec.readValueFromBuffer(buffer) as String?
+                val message = StandardMessageCodec.readValueFromBuffer(buffer) as String?
+                val details = StandardMessageCodec.readValueFromBuffer(buffer)
+                throw RuntimeException("Dart error: ${message ?: code} (code: $code, details: $details)")
+            }
+            else -> throw RuntimeException("Invalid response envelope from Dart (byte $kind)")
+        }
     }
 
     /**

@@ -7,6 +7,10 @@ static JavaVM *g_vm = NULL;
 static jclass g_bridge_class = NULL;
 static jmethodID g_handle_call_id = NULL;
 
+// Function pointer to Dart callback for native->Dart calls
+typedef uint8_t* (*DartBinderCallFunc)(uint8_t*, uint32_t, uint32_t*);
+static DartBinderCallFunc g_dart_callback = NULL;
+
 JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
     g_vm = vm;
     return JNI_VERSION_1_6;
@@ -76,4 +80,43 @@ uint8_t *native_binder_call(uint8_t *msg, uint32_t len, uint32_t *out_len) {
 __attribute__((visibility("default")))
 void native_binder_free(uint8_t *ptr) {
     if (ptr) free(ptr);
+}
+
+// Register the Dart callback function pointer
+__attribute__((visibility("default")))
+void dart_binder_register(DartBinderCallFunc callback) {
+    g_dart_callback = callback;
+}
+
+// Call Dart handler from native code (invoked by Kotlin via JNI)
+JNIEXPORT jbyteArray JNICALL
+Java_com_native_1binder_NativeBinderBridge_callDartNative(JNIEnv *env, jclass clazz, jbyteArray msg) {
+    if (!g_dart_callback) {
+        return NULL;
+    }
+
+    jsize len = (*env)->GetArrayLength(env, msg);
+    if (len == 0) return NULL;
+
+    uint8_t *in_buf = (uint8_t *)malloc((size_t)len);
+    if (!in_buf) return NULL;
+
+    (*env)->GetByteArrayRegion(env, msg, 0, len, (jbyte *)in_buf);
+
+    uint32_t out_len = 0;
+    uint8_t *out_buf = g_dart_callback(in_buf, (uint32_t)len, &out_len);
+    free(in_buf);
+
+    if (!out_buf || out_len == 0) {
+        if (out_buf) free(out_buf);
+        return NULL;
+    }
+
+    jbyteArray result = (*env)->NewByteArray(env, (jsize)out_len);
+    if (result) {
+        (*env)->SetByteArrayRegion(env, result, 0, (jsize)out_len, (jbyte *)out_buf);
+    }
+    free(out_buf);
+
+    return result;
 }
