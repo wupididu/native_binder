@@ -25,12 +25,26 @@ class _BenchmarkResult {
   final double methodChannelAvg;
   final double speedup;
 
+  // Detailed timing breakdowns for NativeBinder
+  final double? nbEncodeAvg;
+  final double? nbNativeAvg;
+  final double? nbDecodeAvg;
+  final double? nbNativeDecodeAvg;
+  final double? nbNativeHandlerAvg;
+  final double? nbNativeEncodeAvg;
+
   const _BenchmarkResult({
     required this.name,
     required this.description,
     required this.nativeBinderAvg,
     required this.methodChannelAvg,
     required this.speedup,
+    this.nbEncodeAvg,
+    this.nbNativeAvg,
+    this.nbDecodeAvg,
+    this.nbNativeDecodeAvg,
+    this.nbNativeHandlerAvg,
+    this.nbNativeEncodeAvg,
   });
 }
 
@@ -201,13 +215,41 @@ class _PerformanceTestScreenState extends State<PerformanceTestScreen> {
           await platform.invokeMethod(scenario.channelMethod, payload);
         }
 
-        // Benchmark NativeBinder
+        // Benchmark NativeBinder with detailed timing
+        double totalEncodeTime = 0;
+        double totalNativeTime = 0;
+        double totalDecodeTime = 0;
+        double totalNativeDecodeTime = 0;
+        double totalNativeHandlerTime = 0;
+        double totalNativeEncodeTime = 0;
+        int nativeTimingCount = 0;
+
         final nbStart = DateTime.now().microsecondsSinceEpoch;
         for (int i = 0; i < _iterations; i++) {
-          _nativeBinder.invokeMethod(scenario.nativeMethod, payload);
+          final timingResult =
+              _nativeBinder.invokeMethodWithTiming(scenario.nativeMethod, payload);
+          totalEncodeTime += timingResult.encodeTimeUs;
+          totalNativeTime += timingResult.nativeTimeUs;
+          totalDecodeTime += timingResult.decodeTimeUs;
+          if (timingResult.nativeDecodeTimeUs != null) {
+            totalNativeDecodeTime += timingResult.nativeDecodeTimeUs!;
+            totalNativeHandlerTime += timingResult.nativeHandlerTimeUs!;
+            totalNativeEncodeTime += timingResult.nativeEncodeTimeUs!;
+            nativeTimingCount++;
+          }
         }
         final nbEnd = DateTime.now().microsecondsSinceEpoch;
         final nbAvg = (nbEnd - nbStart) / _iterations;
+
+        final nbEncodeAvg = totalEncodeTime / _iterations;
+        final nbNativeAvg = totalNativeTime / _iterations;
+        final nbDecodeAvg = totalDecodeTime / _iterations;
+        final nbNativeDecodeAvg =
+            nativeTimingCount > 0 ? totalNativeDecodeTime / nativeTimingCount : null;
+        final nbNativeHandlerAvg =
+            nativeTimingCount > 0 ? totalNativeHandlerTime / nativeTimingCount : null;
+        final nbNativeEncodeAvg =
+            nativeTimingCount > 0 ? totalNativeEncodeTime / nativeTimingCount : null;
 
         // Benchmark MethodChannel
         final mcStart = DateTime.now().microsecondsSinceEpoch;
@@ -226,6 +268,12 @@ class _PerformanceTestScreenState extends State<PerformanceTestScreen> {
             nativeBinderAvg: nbAvg,
             methodChannelAvg: mcAvg,
             speedup: speedup,
+            nbEncodeAvg: nbEncodeAvg,
+            nbNativeAvg: nbNativeAvg,
+            nbDecodeAvg: nbDecodeAvg,
+            nbNativeDecodeAvg: nbNativeDecodeAvg,
+            nbNativeHandlerAvg: nbNativeHandlerAvg,
+            nbNativeEncodeAvg: nbNativeEncodeAvg,
           ));
           _completedCount++;
         });
@@ -343,7 +391,15 @@ class _PerformanceTestScreenState extends State<PerformanceTestScreen> {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text('Summary', style: theme.textTheme.titleLarge),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
+            Text(
+              'FFI timing breakdown shows: Encode (Dart→bytes), Native (FFI call + native decode+handler+encode), Decode (bytes→Dart). Native column shows sub-breakdown if available.',
+              style: theme.textTheme.bodySmall?.copyWith(
+                color: Colors.grey.shade700,
+                fontSize: 11,
+              ),
+            ),
+            const SizedBox(height: 12),
             Row(
               children: [
                 Expanded(
@@ -367,38 +423,64 @@ class _PerformanceTestScreenState extends State<PerformanceTestScreen> {
               ],
             ),
             const SizedBox(height: 16),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(8),
-              child: Table(
-                border:
-                    TableBorder.all(color: Colors.green.shade200, width: 0.5),
-                columnWidths: const {
-                  0: FlexColumnWidth(2.2),
-                  1: FlexColumnWidth(1.5),
-                  2: FlexColumnWidth(1.5),
-                  3: FlexColumnWidth(1),
-                },
-                children: [
-                  TableRow(
-                    decoration: BoxDecoration(color: Colors.green.shade100),
-                    children: const [
-                      _TableHeader('Scenario'),
-                      _TableHeader('FFI (μs)'),
-                      _TableHeader('MC (μs)'),
-                      _TableHeader('Factor'),
-                    ],
-                  ),
-                  ..._results.map((r) => TableRow(
+            SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: Table(
+                  border: TableBorder.all(
+                      color: Colors.green.shade200, width: 0.5),
+                  columnWidths: const {
+                    0: FixedColumnWidth(140),
+                    1: FixedColumnWidth(60),
+                    2: FixedColumnWidth(60),
+                    3: FixedColumnWidth(60),
+                    4: FixedColumnWidth(60),
+                    5: FixedColumnWidth(70),
+                    6: FixedColumnWidth(70),
+                  },
+                  children: [
+                    TableRow(
+                      decoration: BoxDecoration(color: Colors.green.shade100),
+                      children: const [
+                        _TableHeader('Scenario'),
+                        _TableHeader('Encode\n(Dart)'),
+                        _TableHeader('Native\n(FFI+exec)'),
+                        _TableHeader('Decode\n(Dart)'),
+                        _TableHeader('FFI\nTotal'),
+                        _TableHeader('MC\nTotal'),
+                        _TableHeader('Speedup'),
+                      ],
+                    ),
+                    ..._results.map((r) {
+                      // Calculate native breakdown if available
+                      final hasNativeTiming = r.nbNativeDecodeAvg != null &&
+                          r.nbNativeHandlerAvg != null &&
+                          r.nbNativeEncodeAvg != null;
+
+                      return TableRow(
                         decoration: const BoxDecoration(color: Colors.white),
                         children: [
                           _TableCell(r.name),
+                          _TableCell(r.nbEncodeAvg?.toStringAsFixed(1) ?? '-'),
+                          _TableCell(
+                            r.nbNativeAvg?.toStringAsFixed(1) ?? '-',
+                            subtitle: hasNativeTiming
+                                ? '${r.nbNativeDecodeAvg!.toStringAsFixed(1)}+'
+                                    '${r.nbNativeHandlerAvg!.toStringAsFixed(1)}+'
+                                    '${r.nbNativeEncodeAvg!.toStringAsFixed(1)}'
+                                : null,
+                          ),
+                          _TableCell(r.nbDecodeAvg?.toStringAsFixed(1) ?? '-'),
                           _TableCell(r.nativeBinderAvg.toStringAsFixed(1)),
                           _TableCell(r.methodChannelAvg.toStringAsFixed(1)),
                           _TableCell('${r.speedup.toStringAsFixed(1)}x',
                               bold: true),
                         ],
-                      )),
-                ],
+                      );
+                    }),
+                  ],
+                ),
               ),
             ),
           ],
@@ -459,9 +541,10 @@ class _TableHeader extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
       child: Text(text,
-          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 12)),
+          textAlign: TextAlign.center,
+          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 10)),
     );
   }
 }
@@ -469,16 +552,29 @@ class _TableHeader extends StatelessWidget {
 class _TableCell extends StatelessWidget {
   final String text;
   final bool bold;
-  const _TableCell(this.text, {this.bold = false});
+  final String? subtitle;
+  const _TableCell(this.text, {this.bold = false, this.subtitle});
 
   @override
   Widget build(BuildContext context) {
     return Padding(
-      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
-      child: Text(text,
-          style: TextStyle(
-              fontSize: 12,
-              fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+      padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 6),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(text,
+              style: TextStyle(
+                  fontSize: 11,
+                  fontWeight: bold ? FontWeight.bold : FontWeight.normal)),
+          if (subtitle != null)
+            Text(subtitle!,
+                style: TextStyle(
+                    fontSize: 8,
+                    color: Colors.grey.shade600,
+                    fontWeight: FontWeight.normal)),
+        ],
+      ),
     );
   }
 }

@@ -121,9 +121,14 @@ public class NativeBinder {
         guard !input.isEmpty else {
             return encodeError(code: "INVALID_INPUT", message: "Empty input", details: nil)
         }
+
+        // Measure decode time
+        let decodeStart = DispatchTime.now()
         guard let decoded = codec.decode(input) as? [Any], decoded.count >= 2 else {
             return encodeError(code: "INVALID_INPUT", message: "Decoded value must be [channelName, method, args]", details: nil)
         }
+        let decodeEnd = DispatchTime.now()
+        let decodeTimeUs = Double(decodeEnd.uptimeNanoseconds - decodeStart.uptimeNanoseconds) / 1000.0
 
         guard let channelName = decoded[0] as? String else {
             return encodeError(code: "INVALID_INPUT", message: "Channel name must be String", details: nil)
@@ -144,9 +149,21 @@ public class NativeBinder {
         }
 
         do {
+            // Measure handler execution time
+            let handlerStart = DispatchTime.now()
             let call = MethodCall(method: methodName, arguments: args)
             let result = try handler(call)
-            return encodeSuccess(result)
+            let handlerEnd = DispatchTime.now()
+            let handlerTimeUs = Double(handlerEnd.uptimeNanoseconds - handlerStart.uptimeNanoseconds) / 1000.0
+
+            // Measure encode time (includes wrapping result with timing metadata)
+            let encodeStart = DispatchTime.now()
+            let encoded = encodeSuccessWithTiming(result, decodeTimeUs: decodeTimeUs, handlerTimeUs: handlerTimeUs)
+            let encodeEnd = DispatchTime.now()
+            let encodeTimeUs = Double(encodeEnd.uptimeNanoseconds - encodeStart.uptimeNanoseconds) / 1000.0
+
+            // Return encoded result (timing included as metadata)
+            return encoded
         } catch {
             let nsError = error as NSError
             if nsError.domain == "NativeBinder" && nsError.code == -2 {
@@ -158,6 +175,40 @@ public class NativeBinder {
 
     private static func encodeSuccess(_ result: Any?) -> Data {
         let envelope: [Any] = [0, result ?? NSNull()]
+        return (codec.encode(envelope) as? Data) ?? Data()
+    }
+
+    /// Encodes a success response with timing metadata.
+    /// The result is wrapped in a Dictionary with '_value' and '_timing' keys.
+    /// The '_timing' map contains 'decode', 'handler', and 'encode' times in microseconds.
+    private static func encodeSuccessWithTiming(_ result: Any?, decodeTimeUs: Double, handlerTimeUs: Double) -> Data {
+        // First encode to measure the encode time
+        let encodeStart = DispatchTime.now()
+
+        // Create wrapper with timing metadata
+        let wrapper: [String: Any] = [
+            "_value": result ?? NSNull(),
+            "_timing": [
+                "decode": decodeTimeUs,
+                "handler": handlerTimeUs,
+                "encode": 0.0  // Placeholder, will be updated
+            ]
+        ]
+        let tempEnvelope: [Any] = [0, wrapper]
+        let _ = (codec.encode(tempEnvelope) as? Data) ?? Data()
+        let encodeEnd = DispatchTime.now()
+        let encodeTimeUs = Double(encodeEnd.uptimeNanoseconds - encodeStart.uptimeNanoseconds) / 1000.0
+
+        // Re-encode with actual encode time
+        let finalWrapper: [String: Any] = [
+            "_value": result ?? NSNull(),
+            "_timing": [
+                "decode": decodeTimeUs,
+                "handler": handlerTimeUs,
+                "encode": encodeTimeUs
+            ]
+        ]
+        let envelope: [Any] = [0, finalWrapper]
         return (codec.encode(envelope) as? Data) ?? Data()
     }
 

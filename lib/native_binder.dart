@@ -19,6 +19,50 @@ export 'src/platform_exception.dart';
 
 typedef MethodCallHandler = dynamic Function(MethodCall call);
 
+/// Holds the result of a method call along with detailed timing breakdowns.
+///
+/// Used by [NativeBinder.invokeMethodWithTiming] to provide performance metrics.
+class TimingResult<T> {
+  /// Creates a timing result with the specified value and timing breakdowns.
+  const TimingResult({
+    required this.value,
+    required this.encodeTimeUs,
+    required this.nativeTimeUs,
+    required this.decodeTimeUs,
+    this.nativeDecodeTimeUs,
+    this.nativeHandlerTimeUs,
+    this.nativeEncodeTimeUs,
+  });
+
+  /// The result value from the method call.
+  final T? value;
+
+  /// Time spent encoding the call in Dart (microseconds).
+  final double encodeTimeUs;
+
+  /// Time spent in the FFI call + native execution (microseconds).
+  /// This includes native decode, handler execution, and native encode.
+  final double nativeTimeUs;
+
+  /// Time spent decoding the response in Dart (microseconds).
+  final double decodeTimeUs;
+
+  /// Time spent decoding the request on native side (microseconds).
+  /// Only available if native handler provides timing data.
+  final double? nativeDecodeTimeUs;
+
+  /// Time spent executing the native handler (microseconds).
+  /// Only available if native handler provides timing data.
+  final double? nativeHandlerTimeUs;
+
+  /// Time spent encoding the response on native side (microseconds).
+  /// Only available if native handler provides timing data.
+  final double? nativeEncodeTimeUs;
+
+  /// Total time for the entire call (microseconds).
+  double get totalTimeUs => encodeTimeUs + nativeTimeUs + decodeTimeUs;
+}
+
 /// Synchronous bridge from Dart to native code (Kotlin via JNI on Android,
 /// Swift via FFI on iOS) using a single C ABI and StandardMessageCodec.
 ///
@@ -110,6 +154,71 @@ class NativeBinder {
       );
     }
     return _decodeResponse<T>(ByteData.sublistView(response));
+  }
+
+  /// Invokes a native method synchronously and returns detailed timing breakdowns.
+  ///
+  /// This method is identical to [invokeMethod] but additionally measures and returns:
+  /// - Time spent encoding the call in Dart
+  /// - Time spent in the native FFI call (including native decode, handler, encode)
+  /// - Time spent decoding the response in Dart
+  /// - Native-side timing breakdowns (if the native handler provides them)
+  ///
+  /// Useful for performance analysis and benchmarking.
+  ///
+  /// Example:
+  /// ```dart
+  /// final channel = NativeBinder('my_channel');
+  /// final result = channel.invokeMethodWithTiming<String>('echo', 'hello');
+  /// print('Total: ${result.totalTimeUs}μs, Encode: ${result.encodeTimeUs}μs');
+  /// ```
+  ///
+  /// Throws [PlatformException] if the native call fails or returns an error.
+  /// Throws [MissingPluginException] if the platform is unsupported.
+  TimingResult<T> invokeMethodWithTiming<T>(String method, [dynamic arguments]) {
+    final lib = nativeBinderLibrary;
+    if (lib == null) {
+      throw const MissingPluginException(
+        'Native bindings not available on this platform',
+      );
+    }
+
+    // Measure encoding time
+    final encodeStart = DateTime.now().microsecondsSinceEpoch;
+    final encoded = _encodeCall(name, method, arguments);
+    final bytes = encoded.buffer.asUint8List(encoded.offsetInBytes, encoded.lengthInBytes);
+    final encodeEnd = DateTime.now().microsecondsSinceEpoch;
+    final encodeTimeUs = (encodeEnd - encodeStart).toDouble();
+
+    // Measure FFI + native time
+    final nativeStart = DateTime.now().microsecondsSinceEpoch;
+    final response = callNative(lib, bytes);
+    final nativeEnd = DateTime.now().microsecondsSinceEpoch;
+    final nativeTimeUs = (nativeEnd - nativeStart).toDouble();
+
+    if (response == null) {
+      throw const PlatformException(
+        code: 'NULL_RESPONSE',
+        message: 'Native call returned null',
+      );
+    }
+
+    // Measure decoding time and extract native timing if available
+    final decodeStart = DateTime.now().microsecondsSinceEpoch;
+    final responseData = ByteData.sublistView(response);
+    final result = _decodeResponseWithTiming<T>(responseData);
+    final decodeEnd = DateTime.now().microsecondsSinceEpoch;
+    final decodeTimeUs = (decodeEnd - decodeStart).toDouble();
+
+    return TimingResult<T>(
+      value: result.value,
+      encodeTimeUs: encodeTimeUs,
+      nativeTimeUs: nativeTimeUs,
+      decodeTimeUs: decodeTimeUs,
+      nativeDecodeTimeUs: result.nativeDecodeTimeUs,
+      nativeHandlerTimeUs: result.nativeHandlerTimeUs,
+      nativeEncodeTimeUs: result.nativeEncodeTimeUs,
+    );
   }
 
   /// Sets a callback for handling method calls from native code.
@@ -268,6 +377,8 @@ class NativeBinder {
 
   /// Decodes a response encoded as a single codec list:
   /// success → [0, result], error → [1, code, message, details].
+  ///
+  /// Also handles timing-wrapped responses: [0, {_value: result, _timing: {...}}]
   static T? _decodeResponse<T>(ByteData envelope) {
     if (envelope.lengthInBytes == 0) {
       throw const PlatformException(
@@ -285,7 +396,14 @@ class NativeBinder {
     }
     final kind = list[0] as int;
     if (kind == 0) {
-      return list.length > 1 ? list[1] as T? : null;
+      final rawValue = list.length > 1 ? list[1] : null;
+
+      // Check if the value is timing-wrapped and unwrap it
+      if (rawValue is Map && rawValue.containsKey('_timing') && rawValue.containsKey('_value')) {
+        return rawValue['_value'] as T?;
+      }
+
+      return rawValue as T?;
     }
     if (kind == 1) {
       final code = list.length > 1 ? list[1] as String? : null;
@@ -302,4 +420,79 @@ class NativeBinder {
       message: 'Invalid response envelope (kind $kind)',
     );
   }
+
+  /// Decodes a response with optional native timing data.
+  ///
+  /// If the native handler provides timing data in the response, it will be
+  /// extracted and returned. The timing data should be in a Map with keys:
+  /// 'decode', 'handler', 'encode' (all in microseconds as doubles).
+  ///
+  /// The response format can be:
+  /// - Standard: [0, result] or [1, code, message, details]
+  /// - With timing: [0, {'_value': result, '_timing': {decode: ..., handler: ..., encode: ...}}]
+  static _ResponseWithTiming<T> _decodeResponseWithTiming<T>(ByteData envelope) {
+    if (envelope.lengthInBytes == 0) {
+      throw const PlatformException(
+        code: 'EMPTY_RESPONSE',
+        message: 'Empty response from native',
+      );
+    }
+    final buffer = ReadBuffer(envelope);
+    final list = _codec.readValue(buffer) as List<Object?>;
+    if (list.isEmpty) {
+      throw const PlatformException(
+        code: 'EMPTY_RESPONSE',
+        message: 'Empty response list from native',
+      );
+    }
+    final kind = list[0] as int;
+    if (kind == 0) {
+      final rawValue = list.length > 1 ? list[1] : null;
+
+      // Check if the value contains timing metadata
+      if (rawValue is Map && rawValue.containsKey('_timing')) {
+        final timingMap = rawValue['_timing'] as Map?;
+        final actualValue = rawValue['_value'] as T?;
+
+        return _ResponseWithTiming(
+          value: actualValue,
+          nativeDecodeTimeUs: timingMap?['decode'] as double?,
+          nativeHandlerTimeUs: timingMap?['handler'] as double?,
+          nativeEncodeTimeUs: timingMap?['encode'] as double?,
+        );
+      }
+
+      // No timing data, return just the value
+      return _ResponseWithTiming(value: rawValue as T?);
+    }
+    if (kind == 1) {
+      final code = list.length > 1 ? list[1] as String? : null;
+      final message = list.length > 2 ? list[2] as String? : null;
+      final details = list.length > 3 ? list[3] : null;
+      throw PlatformException(
+        code: code ?? 'UNKNOWN_ERROR',
+        message: message,
+        details: details,
+      );
+    }
+    throw PlatformException(
+      code: 'INVALID_ENVELOPE',
+      message: 'Invalid response envelope (kind $kind)',
+    );
+  }
+}
+
+/// Internal class to hold decoded response value and native timing data.
+class _ResponseWithTiming<T> {
+  const _ResponseWithTiming({
+    required this.value,
+    this.nativeDecodeTimeUs,
+    this.nativeHandlerTimeUs,
+    this.nativeEncodeTimeUs,
+  });
+
+  final T? value;
+  final double? nativeDecodeTimeUs;
+  final double? nativeHandlerTimeUs;
+  final double? nativeEncodeTimeUs;
 }

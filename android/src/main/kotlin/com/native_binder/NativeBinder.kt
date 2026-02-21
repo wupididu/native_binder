@@ -52,8 +52,13 @@ class NativeBinder private constructor(val name: String) {
         @JvmStatic
         fun handleCall(input: ByteArray): ByteArray {
             if (input.isEmpty()) return encodeError("INVALID_INPUT", "Empty input", null)
+
+            // Measure decode time
+            val decodeStart = System.nanoTime()
             val decoded = decodeFromByteArray(input) as? List<*>
                 ?: return encodeError("INVALID_INPUT", "Decoded value must be [channelName, method, args]", null)
+            val decodeEnd = System.nanoTime()
+            val decodeTimeUs = (decodeEnd - decodeStart) / 1000.0
 
             if (decoded.size < 2) {
                 return encodeError("INVALID_INPUT", "Expected [channelName, method, args], got ${decoded.size} elements", null)
@@ -72,9 +77,21 @@ class NativeBinder private constructor(val name: String) {
                 ?: return encodeError("NO_HANDLER", "No handler set for channel: $channelName", null)
 
             return try {
+                // Measure handler execution time
+                val handlerStart = System.nanoTime()
                 val call = MethodCall(method, args)
                 val result = handler(call)
-                encodeSuccess(result)
+                val handlerEnd = System.nanoTime()
+                val handlerTimeUs = (handlerEnd - handlerStart) / 1000.0
+
+                // Measure encode time (includes wrapping result with timing metadata)
+                val encodeStart = System.nanoTime()
+                val encoded = encodeSuccessWithTiming(result, decodeTimeUs, handlerTimeUs)
+                val encodeEnd = System.nanoTime()
+                val encodeTimeUs = (encodeEnd - encodeStart) / 1000.0
+
+                // Return encoded result (timing included as metadata)
+                encoded
             } catch (e: NotImplementedError) {
                 encodeError("NOT_IMPLEMENTED", e.message ?: "Method not implemented", null)
             } catch (e: Throwable) {
@@ -96,6 +113,44 @@ class NativeBinder private constructor(val name: String) {
 
         private fun encodeSuccess(result: Any?): ByteArray {
             return encodeToByteArray(listOf(0, result))
+        }
+
+        /**
+         * Encodes a success response with timing metadata.
+         * The result is wrapped in a Map with '_value' and '_timing' keys.
+         * The '_timing' map contains 'decode', 'handler', and 'encode' times in microseconds.
+         */
+        private fun encodeSuccessWithTiming(
+            result: Any?,
+            decodeTimeUs: Double,
+            handlerTimeUs: Double
+        ): ByteArray {
+            // First encode to measure the encode time
+            val encodeStart = System.nanoTime()
+
+            // Create wrapper with timing metadata
+            val wrapper = mapOf(
+                "_value" to result,
+                "_timing" to mapOf(
+                    "decode" to decodeTimeUs,
+                    "handler" to handlerTimeUs,
+                    "encode" to 0.0  // Placeholder, will be updated
+                )
+            )
+            val tempEncoded = encodeToByteArray(listOf(0, wrapper))
+            val encodeEnd = System.nanoTime()
+            val encodeTimeUs = (encodeEnd - encodeStart) / 1000.0
+
+            // Re-encode with actual encode time
+            val finalWrapper = mapOf(
+                "_value" to result,
+                "_timing" to mapOf(
+                    "decode" to decodeTimeUs,
+                    "handler" to handlerTimeUs,
+                    "encode" to encodeTimeUs
+                )
+            )
+            return encodeToByteArray(listOf(0, finalWrapper))
         }
 
         private fun encodeError(code: String, message: String?, details: Any?): ByteArray {
