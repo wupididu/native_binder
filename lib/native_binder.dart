@@ -1,7 +1,8 @@
 import 'dart:ffi';
 
 import 'package:ffi/ffi.dart';
-import 'package:flutter/services.dart';
+import 'package:flutter/services.dart'
+    hide MethodCall, MissingPluginException, PlatformException;
 
 import 'src/ffi/bindings.dart'
     show
@@ -10,27 +11,55 @@ import 'src/ffi/bindings.dart'
         DartBinderRegisterNative,
         callNative;
 import 'src/ffi/library_loader.dart';
+import 'src/method_call.dart';
+import 'src/platform_exception.dart';
+
+export 'src/method_call.dart';
+export 'src/platform_exception.dart';
+
+typedef MethodCallHandler = dynamic Function(MethodCall call);
 
 /// Synchronous bridge from Dart to native code (Kotlin via JNI on Android,
 /// Swift via FFI on iOS) using a single C ABI and StandardMessageCodec.
 ///
+/// Unlike MethodChannel, all calls are synchronous and block the calling thread.
 /// Supports types: String, int, double, bool, List, Map (and null).
-/// Heavy work on the calling thread will block the Dart isolate.
+///
+/// Create an instance with a channel name, then use [invokeMethod] to call
+/// native code and [setMethodCallHandler] to handle calls from native.
+///
+/// Example:
+/// ```dart
+/// final channel = NativeBinder('my_channel');
+/// final result = channel.invokeMethod<String>('echo', 'hello');
+/// channel.setMethodCallHandler((call) {
+///   if (call.method == 'greet') return 'Hello!';
+///   throw MissingPluginException();
+/// });
+/// ```
 class NativeBinder {
-  NativeBinder._();
+  /// Creates a NativeBinder instance with the specified channel name.
+  ///
+  /// The channel name is used to identify this communication channel
+  /// between Dart and native code, similar to MethodChannel.
+  NativeBinder(this.name);
+
+  /// The name of this channel.
+  final String name;
 
   static const StandardMessageCodec _codec = StandardMessageCodec();
-  static final Map<String, Function> _dartHandlers = {};
+  static final Map<String, MethodCallHandler> _channelHandlers = {};
   static bool _initialized = false;
 
   /// Whether the current platform has native bindings available.
   static bool get isSupported => nativeBinderLibrary != null;
 
   /// Initializes the bidirectional binding by registering the Dart callback
-  /// with the native layer. This must be called before native code can call Dart.
+  /// with the native layer.
   ///
+  /// This must be called before native code can call Dart handlers.
   /// It's safe to call this multiple times; subsequent calls are no-ops.
-  static void initialize() {
+  static void ensureInitialized() {
     if (_initialized) return;
     final lib = nativeBinderLibrary;
     if (lib == null) return;
@@ -39,107 +68,149 @@ class NativeBinder {
       final register = lib.lookupFunction<DartBinderRegisterNative, DartBinderRegisterDart>(
         'dart_binder_register',
       );
-      register(dartCallbackPointer);
+      register(_dartCallbackPointer);
       _initialized = true;
     } catch (_) {
       // Registration not available or failed - native->Dart calls won't work
     }
   }
 
-  /// Invokes a native method by name with [args], returns the decoded result.
+  /// Invokes a native method synchronously with optional arguments.
   ///
-  /// [args] can be any combination of: String, int, double, bool, List, Map, null.
-  /// The native side receives the same types and can return the same types.
+  /// The [method] parameter identifies which native method to call.
+  /// The optional [arguments] can be any codec-supported type:
+  /// null, bool, int, double, String, List, or Map.
+  ///
+  /// Returns the result synchronously, blocking until the native call completes.
+  /// The type parameter [T] specifies the expected return type.
   ///
   /// Example:
   /// ```dart
-  /// final result = NativeBinder.call<String>('echo', ['hello']);
+  /// final channel = NativeBinder('my_channel');
+  /// final result = channel.invokeMethod<String>('echo', 'hello');
+  /// final mapResult = channel.invokeMethod<Map>('getData', {'key': 'value'});
   /// ```
   ///
-  /// Throws [NativeBinderException] if the platform is unsupported, the native
-  /// call fails, or the native side returns an error envelope.
-  static T? call<T>(String method, [Object? args]) {
+  /// Throws [PlatformException] if the native call fails or returns an error.
+  /// Throws [MissingPluginException] if the platform is unsupported.
+  T? invokeMethod<T>(String method, [dynamic arguments]) {
     final lib = nativeBinderLibrary;
     if (lib == null) {
-      throw NativeBinderException(
+      throw const MissingPluginException(
         'Native bindings not available on this platform',
       );
     }
-    final encoded = _encodeCall(method, args);
+    final encoded = _encodeCall(name, method, arguments);
     final bytes = encoded.buffer.asUint8List(encoded.offsetInBytes, encoded.lengthInBytes);
     final response = callNative(lib, bytes);
     if (response == null) {
-      throw NativeBinderException('Native call returned null');
+      throw const PlatformException(
+        code: 'NULL_RESPONSE',
+        message: 'Native call returned null',
+      );
     }
     return _decodeResponse<T>(ByteData.sublistView(response));
   }
 
-  /// Registers a Dart handler that native code can call.
+  /// Sets a callback for handling method calls from native code.
   ///
-  /// [handler] receives arguments as a dynamic value (null, primitives, List, Map)
-  /// and should return a value of the same supported types.
+  /// The [handler] receives a [MethodCall] object containing the method name
+  /// and arguments, and should return a value or throw an exception.
+  ///
+  /// Throw [MissingPluginException] for unrecognized methods.
   ///
   /// Example:
   /// ```dart
-  /// NativeBinder.register('greet', (args) {
-  ///   final name = (args as List)[0] as String;
-  ///   return 'Hello, $name!';
+  /// final channel = NativeBinder('my_channel');
+  /// channel.setMethodCallHandler((call) {
+  ///   switch (call.method) {
+  ///     case 'greet':
+  ///       final name = call.arguments as String;
+  ///       return 'Hello, $name!';
+  ///     default:
+  ///       throw MissingPluginException();
+  ///   }
   /// });
   /// ```
   ///
-  /// Throws [StateError] if a handler with the same [method] name is already registered.
-  static void register(String method, Function handler) {
-    if (_dartHandlers.containsKey(method)) {
-      throw StateError('Handler "$method" is already registered');
+  /// Pass null to remove the handler.
+  void setMethodCallHandler(MethodCallHandler? handler) {
+    ensureInitialized();
+    if (handler == null) {
+      _channelHandlers.remove(name);
+    } else {
+      _channelHandlers[name] = handler;
     }
-    _dartHandlers[method] = handler;
-  }
-
-  /// Unregisters a previously registered Dart handler.
-  ///
-  /// Returns true if the handler was found and removed, false otherwise.
-  static bool unregister(String method) {
-    return _dartHandlers.remove(method) != null;
   }
 
   /// Returns the native function pointer that native code can use to call Dart handlers.
   ///
   /// This pointer should be passed to the native side during initialization.
-  static Pointer<NativeFunction<DartBinderCallNative>> get dartCallbackPointer {
+  static Pointer<NativeFunction<DartBinderCallNative>> get _dartCallbackPointer {
     return Pointer.fromFunction<DartBinderCallNative>(
       _handleNativeCallToDart,
     );
   }
 
   /// Dispatcher for calls from native to Dart.
+  ///
+  /// Decodes the channel name and method call, dispatches to the registered
+  /// handler, and returns the encoded result.
   static Pointer<Uint8> _handleNativeCallToDart(
     Pointer<Uint8> msgPtr,
     int len,
     Pointer<Uint32> outLen,
   ) {
     try {
-      // Decode single value [method, args] (same format as native sends)
+      // Decode single value [channelName, method, args]
       final msgBytes = msgPtr.asTypedList(len);
       final buffer = ReadBuffer(ByteData.sublistView(Uint8List.fromList(msgBytes)));
       final list = _codec.readValue(buffer) as List<Object?>;
-      final method = list.isNotEmpty ? list[0] as String : '';
-      final args = list.length > 1 ? list[1] : null;
 
-      // Look up handler
-      final handler = _dartHandlers[method];
+      if (list.length < 2) {
+        return _encodeNativeResponse(
+          outLen,
+          success: false,
+          code: 'INVALID_FORMAT',
+          message: 'Expected [channelName, method, args], got ${list.length} elements',
+        );
+      }
+
+      final channelName = list[0] as String;
+      final method = list[1] as String;
+      final args = list.length > 2 ? list[2] : null;
+
+      // Look up handler for this channel
+      final handler = _channelHandlers[channelName];
       if (handler == null) {
         return _encodeNativeResponse(
           outLen,
           success: false,
-          code: 'NOT_FOUND',
-          message: 'No Dart handler registered for method "$method"',
+          code: 'NO_HANDLER',
+          message: 'No handler registered for channel "$channelName"',
         );
       }
 
       // Execute handler
       try {
-        final result = handler(args);
+        final call = MethodCall(method, args);
+        final result = handler(call);
         return _encodeNativeResponse(outLen, success: true, value: result);
+      } on MissingPluginException catch (e) {
+        return _encodeNativeResponse(
+          outLen,
+          success: false,
+          code: 'NOT_IMPLEMENTED',
+          message: e.message ?? 'Method not implemented',
+        );
+      } on PlatformException catch (e) {
+        return _encodeNativeResponse(
+          outLen,
+          success: false,
+          code: e.code,
+          message: e.message,
+          details: e.details,
+        );
       } catch (e, stackTrace) {
         return _encodeNativeResponse(
           outLen,
@@ -187,11 +258,11 @@ class NativeBinder {
     return outPtr;
   }
 
-  /// Encodes [method] and [arguments] as a single list value so native
-  /// can use Flutter's StandardMessageCodec.decode (one value) on iOS.
-  static ByteData _encodeCall(String method, Object? arguments) {
+  /// Encodes [channelName], [method], and [arguments] as a single list value
+  /// so native can use Flutter's StandardMessageCodec.decode (one value).
+  static ByteData _encodeCall(String channelName, String method, Object? arguments) {
     final buffer = WriteBuffer();
-    _codec.writeValue(buffer, [method, arguments]);
+    _codec.writeValue(buffer, [channelName, method, arguments]);
     return buffer.done();
   }
 
@@ -199,12 +270,18 @@ class NativeBinder {
   /// success → [0, result], error → [1, code, message, details].
   static T? _decodeResponse<T>(ByteData envelope) {
     if (envelope.lengthInBytes == 0) {
-      throw NativeBinderException('Empty response from native');
+      throw const PlatformException(
+        code: 'EMPTY_RESPONSE',
+        message: 'Empty response from native',
+      );
     }
     final buffer = ReadBuffer(envelope);
     final list = _codec.readValue(buffer) as List<Object?>;
     if (list.isEmpty) {
-      throw NativeBinderException('Empty response list from native');
+      throw const PlatformException(
+        code: 'EMPTY_RESPONSE',
+        message: 'Empty response list from native',
+      );
     }
     final kind = list[0] as int;
     if (kind == 0) {
@@ -214,29 +291,15 @@ class NativeBinder {
       final code = list.length > 1 ? list[1] as String? : null;
       final message = list.length > 2 ? list[2] as String? : null;
       final details = list.length > 3 ? list[3] : null;
-      throw NativeBinderException(
-        message ?? code ?? 'Unknown native error',
-        code: code,
+      throw PlatformException(
+        code: code ?? 'UNKNOWN_ERROR',
+        message: message,
         details: details,
       );
     }
-    throw NativeBinderException('Invalid response envelope (kind $kind)');
+    throw PlatformException(
+      code: 'INVALID_ENVELOPE',
+      message: 'Invalid response envelope (kind $kind)',
+    );
   }
-}
-
-/// Thrown when a native binder call fails or the platform is unsupported.
-class NativeBinderException implements Exception {
-  NativeBinderException(
-    this.message, {
-    this.code,
-    this.details,
-  });
-
-  final String message;
-  final String? code;
-  final Object? details;
-
-  @override
-  String toString() =>
-      'NativeBinderException: $message${code != null ? ' (code: $code)' : ''}';
 }

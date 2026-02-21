@@ -70,6 +70,7 @@ class PerformanceTestScreen extends StatefulWidget {
 
 class _PerformanceTestScreenState extends State<PerformanceTestScreen> {
   static const platform = MethodChannel('native_binder_perf');
+  final _nativeBinder = NativeBinder('example_channel');
 
   bool _isRunning = false;
   int _iterations = 500;
@@ -196,14 +197,14 @@ class _PerformanceTestScreenState extends State<PerformanceTestScreen> {
 
         // Warm up
         for (int i = 0; i < 20; i++) {
-          NativeBinder.call(scenario.nativeMethod, payload);
+          _nativeBinder.invokeMethod(scenario.nativeMethod, payload);
           await platform.invokeMethod(scenario.channelMethod, payload);
         }
 
         // Benchmark NativeBinder
         final nbStart = DateTime.now().microsecondsSinceEpoch;
         for (int i = 0; i < _iterations; i++) {
-          NativeBinder.call(scenario.nativeMethod, payload);
+          _nativeBinder.invokeMethod(scenario.nativeMethod, payload);
         }
         final nbEnd = DateTime.now().microsecondsSinceEpoch;
         final nbAvg = (nbEnd - nbStart) / _iterations;

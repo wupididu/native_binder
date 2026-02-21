@@ -18,7 +18,7 @@ JNIEXPORT jint JNI_OnLoad(JavaVM *vm, void *reserved) {
 
 static int ensure_bridge(JNIEnv *env) {
     if (g_bridge_class != NULL && g_handle_call_id != NULL) return 1;
-    g_bridge_class = (*env)->FindClass(env, "com/native_binder/NativeBinderBridge");
+    g_bridge_class = (*env)->FindClass(env, "com/native_binder/NativeBinder");
     if (!g_bridge_class) return 0;
     g_bridge_class = (*env)->NewGlobalRef(env, g_bridge_class);
     g_handle_call_id = (*env)->GetStaticMethodID(env, g_bridge_class, "handleCall", "([B)[B");
@@ -90,7 +90,7 @@ void dart_binder_register(DartBinderCallFunc callback) {
 
 // Call Dart handler from native code (invoked by Kotlin via JNI)
 JNIEXPORT jbyteArray JNICALL
-Java_com_native_1binder_NativeBinderBridge_callDartNative(JNIEnv *env, jclass clazz, jbyteArray msg) {
+Java_com_native_1binder_NativeBinder_callDartNative(JNIEnv *env, jclass clazz, jbyteArray msg) {
     if (!g_dart_callback) {
         return NULL;
     }

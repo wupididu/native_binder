@@ -26,118 +26,117 @@ import native_binder
       }
     }
 
-    // Register demo handlers to showcase native_binder functionality
-    registerNativeBinderHandler("echo") { args in
-        // args is the value directly (String or nil)
-        return args
-    }
+    // Create NativeBinder channel instance
+    let channel = NativeBinder.createChannel("example_channel")
 
-    registerNativeBinderHandler("getCount") { _ in 42 }
+    // Set single handler for all methods from Dart
+    channel.setMethodCallHandler { call in
+        switch call.method {
+        case "echo":
+            return call.arguments
 
-    registerNativeBinderHandler("getDouble") { _ in 3.14 }
+        case "getCount":
+            return 42
 
-    registerNativeBinderHandler("getBool") { _ in true }
+        case "getDouble":
+            return 3.14
 
-    registerNativeBinderHandler("getItems") { _ in ["a", "b", 1, 2.0] }
+        case "getBool":
+            return true
 
-    registerNativeBinderHandler("getConfig") { _ in ["key": "value", "n": 1] }
+        case "getItems":
+            return ["a", "b", 1, 2.0]
 
-    registerNativeBinderHandler("getNull") { _ in nil as Any? }
+        case "getConfig":
+            return ["key": "value", "n": 1]
 
-    registerNativeBinderHandler("add") { args in
-        guard let list = args as? [Any?], list.count >= 2,
-              let a = list[0] as? NSNumber, let b = list[1] as? NSNumber else {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects a List of two numbers"])
+        case "getNull":
+            return nil as Any?
+
+        case "add":
+            guard let list = call.arguments as? [Any?], list.count >= 2,
+                  let a = list[0] as? NSNumber, let b = list[1] as? NSNumber else {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects a List of two numbers"])
+            }
+            if a === kCFBooleanTrue || a === kCFBooleanFalse || b === kCFBooleanTrue || b === kCFBooleanFalse {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects two numbers"])
+            }
+            let ai = a.intValue, bi = b.intValue
+            if a.doubleValue == Double(ai) && b.doubleValue == Double(bi) {
+                return ai + bi
+            }
+            return a.doubleValue + b.doubleValue
+
+        case "triggerError":
+            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Demo error"])
+
+        case "square":
+            guard let n = call.arguments as? NSNumber else {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "square expects an Int"])
+            }
+            return n.intValue * n.intValue
+
+        case "circleArea":
+            guard let n = call.arguments as? NSNumber else {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "circleArea expects a Number"])
+            }
+            let radius = n.doubleValue
+            return Double.pi * radius * radius
+
+        case "invertBool":
+            guard let n = call.arguments as? NSNumber else {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "invertBool expects a Bool"])
+            }
+            return !(n.boolValue)
+
+        case "reverseString":
+            guard let s = call.arguments as? String else {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "reverseString expects a String"])
+            }
+            return String(s.reversed())
+
+        case "processUserInfo":
+            guard let dict = call.arguments as? [String: Any] else {
+                throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "processUserInfo expects a Map"])
+            }
+            let name = dict["name"] as? String ?? "Unknown"
+            let age = (dict["age"] as? NSNumber)?.intValue ?? 0
+            let city = dict["city"] as? String
+            var result = "User: \(name), Age: \(age)"
+            if let city = city {
+                result += ", City: \(city)"
+            }
+            return result
+
+        case "testDartCallback":
+            do {
+                // Call Dart handlers from Swift
+                let greeting = try channel.invokeMethod("dartGreet", arguments: ["Swift"]) as? String ?? ""
+                let product = try channel.invokeMethod("dartMultiply", arguments: [6, 7]) as? NSNumber ?? 0
+                let processed = try channel.invokeMethod("dartProcessData",
+                    arguments: ["x": 1, "y": 2, "z": 3]) as? [String: Any] ?? [:]
+
+                return """
+                Swift called Dart:
+                  dartGreet: \(greeting)
+                  dartMultiply(6,7): \(product)
+                  dartProcessData: \(processed)
+                """
+            } catch {
+                throw NSError(domain: "NativeBinder", code: -1,
+                    userInfo: [NSLocalizedDescriptionKey: "Failed to call Dart: \(error.localizedDescription)"])
+            }
+
+        case "perfTest":
+            return (call.arguments as? NSNumber)?.intValue ?? 0
+
+        case "perfEchoString", "perfEchoList", "perfEchoMap":
+            return call.arguments
+
+        default:
+            throw NSError(domain: "NativeBinder", code: -2, userInfo: [NSLocalizedDescriptionKey: "Method \(call.method) not implemented"])
         }
-        if a === kCFBooleanTrue || a === kCFBooleanFalse || b === kCFBooleanTrue || b === kCFBooleanFalse {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "add expects two numbers"])
-        }
-        let ai = a.intValue, bi = b.intValue
-        if a.doubleValue == Double(ai) && b.doubleValue == Double(bi) {
-            return ai + bi
-        }
-        return a.doubleValue + b.doubleValue
     }
-
-    registerNativeBinderHandler("triggerError") { _ in
-        throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "Demo error"])
-    }
-
-    // Single primitive argument examples
-    registerNativeBinderHandler("square") { args in
-        guard let n = args as? NSNumber else {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "square expects an Int"])
-        }
-        return n.intValue * n.intValue
-    }
-
-    registerNativeBinderHandler("circleArea") { args in
-        guard let n = args as? NSNumber else {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "circleArea expects a Number"])
-        }
-        let radius = n.doubleValue
-        return Double.pi * radius * radius
-    }
-
-    registerNativeBinderHandler("invertBool") { args in
-        guard let n = args as? NSNumber else {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "invertBool expects a Bool"])
-        }
-        return !(n.boolValue)
-    }
-
-    registerNativeBinderHandler("reverseString") { args in
-        // args is a String directly
-        guard let s = args as? String else {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "reverseString expects a String"])
-        }
-        return String(s.reversed())
-    }
-
-    registerNativeBinderHandler("processUserInfo") { args in
-        guard let dict = args as? [String: Any] else {
-            throw NSError(domain: "NativeBinder", code: -1, userInfo: [NSLocalizedDescriptionKey: "processUserInfo expects a Map"])
-        }
-        let name = dict["name"] as? String ?? "Unknown"
-        let age = (dict["age"] as? NSNumber)?.intValue ?? 0
-        let city = dict["city"] as? String
-        var result = "User: \(name), Age: \(age)"
-        if let city = city {
-            result += ", City: \(city)"
-        }
-        return result
-    }
-
-    // Native → Dart call demonstration
-    registerNativeBinderHandler("testDartCallback") { _ in
-        do {
-            // Call Dart handlers from Swift
-            let greeting = try callDartHandler("dartGreet", args: ["Swift"]) as? String ?? ""
-            let product = try callDartHandler("dartMultiply", args: [6, 7]) as? NSNumber ?? 0
-            let processed = try callDartHandler("dartProcessData",
-                args: ["x": 1, "y": 2, "z": 3]) as? [String: Any] ?? [:]
-
-            return """
-            Swift called Dart:
-              dartGreet: \(greeting)
-              dartMultiply(6,7): \(product)
-              dartProcessData: \(processed)
-            """
-        } catch {
-            throw NSError(domain: "NativeBinder", code: -1,
-                userInfo: [NSLocalizedDescriptionKey: "Failed to call Dart: \(error.localizedDescription)"])
-        }
-    }
-
-    // Performance test handler
-    registerNativeBinderHandler("perfTest") { args in
-        return (args as? NSNumber)?.intValue ?? 0
-    }
-
-    // Large data performance test handlers (echo back the payload)
-    registerNativeBinderHandler("perfEchoString") { args in return args }
-    registerNativeBinderHandler("perfEchoList") { args in return args }
-    registerNativeBinderHandler("perfEchoMap") { args in return args }
 
     return super.application(application, didFinishLaunchingWithOptions: launchOptions)
   }

@@ -28,48 +28,51 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
   String? _reverseStringResult;
   String? _errorDisplay;
 
+  // Create channel instance with name
+  final _channel = NativeBinder('example_channel');
+
   @override
   void initState() {
     super.initState();
-    // Initialize bidirectional binding
-    NativeBinder.initialize();
 
-    // Register Dart handlers that native code can call
-    NativeBinder.register('dartGreet', (args) {
-      final name = (args as List?)?[0] as String? ?? 'Unknown';
-      return 'Hello from Dart, $name!';
-    });
+    // Set up a single handler for all methods from native code
+    _channel.setMethodCallHandler((call) {
+      switch (call.method) {
+        case 'dartGreet':
+          final name = (call.arguments as List?)?[0] as String? ?? 'Unknown';
+          return 'Hello from Dart, $name!';
 
-    NativeBinder.register('dartMultiply', (args) {
-      final list = args as List;
-      final a = list[0] as num;
-      final b = list[1] as num;
-      return a * b;
-    });
+        case 'dartMultiply':
+          final list = call.arguments as List;
+          final a = list[0] as num;
+          final b = list[1] as num;
+          return a * b;
 
-    NativeBinder.register('dartProcessData', (args) {
-      final data = args as Map;
-      return {
-        'processed': true,
-        'count': data.length,
-        'keys': data.keys.toList(),
-      };
+        case 'dartProcessData':
+          final data = call.arguments as Map;
+          return {
+            'processed': true,
+            'count': data.length,
+            'keys': data.keys.toList(),
+          };
+
+        default:
+          throw MissingPluginException();
+      }
     });
   }
 
   @override
   void dispose() {
     _echoController.dispose();
-    NativeBinder.unregister('dartGreet');
-    NativeBinder.unregister('dartMultiply');
-    NativeBinder.unregister('dartProcessData');
+    _channel.setMethodCallHandler(null);
     super.dispose();
   }
 
   void _callEcho() {
     if (!NativeBinder.isSupported) return;
     try {
-      final result = NativeBinder.call<String>(
+      final result = _channel.invokeMethod<String>(
         'echo',
         _echoController.text.isEmpty ? null : _echoController.text,
       );
@@ -77,105 +80,119 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
         _echoResult = result;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _loadPrimitives() {
     if (!NativeBinder.isSupported) return;
     try {
-      final count = NativeBinder.call<int>('getCount');
-      final d = NativeBinder.call<double>('getDouble');
-      final b = NativeBinder.call<bool>('getBool');
+      final count = _channel.invokeMethod<int>('getCount');
+      final d = _channel.invokeMethod<double>('getDouble');
+      final b = _channel.invokeMethod<bool>('getBool');
       setState(() {
         _countResult = count;
         _doubleResult = d;
         _boolResult = b;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _loadCollections() {
     if (!NativeBinder.isSupported) return;
     try {
-      final items = NativeBinder.call<List<dynamic>>('getItems');
-      final config = NativeBinder.call<Map<dynamic, dynamic>>('getConfig');
+      final items = _channel.invokeMethod<List<dynamic>>('getItems');
+      final config = _channel.invokeMethod<Map<dynamic, dynamic>>('getConfig');
       setState(() {
         _itemsResult = items;
         _configResult = config;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _loadNull() {
     if (!NativeBinder.isSupported) return;
     try {
-      final result = NativeBinder.call<Object?>('getNull');
+      final result = _channel.invokeMethod<Object?>('getNull');
       assert(result == null);
       setState(() {
         _nullCalled = true;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _callAdd() {
     if (!NativeBinder.isSupported) return;
     try {
-      final sumInt = NativeBinder.call<int>('add', [1, 2]);
-      final sumDouble = NativeBinder.call<double>('add', [2.5, 3.5]);
+      final sumInt = _channel.invokeMethod<int>('add', [1, 2]);
+      final sumDouble = _channel.invokeMethod<double>('add', [2.5, 3.5]);
       setState(() {
         _addIntResult = sumInt;
         _addDoubleResult = sumDouble;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _triggerError() {
     if (!NativeBinder.isSupported) return;
     try {
-      NativeBinder.call<void>('triggerError');
+      _channel.invokeMethod<void>('triggerError');
       setState(() => _errorDisplay = null);
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() {
         _errorDisplay =
             'message: ${e.message}\ncode: ${e.code}\ndetails: ${e.details}';
       });
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _callUnknownMethod() {
     if (!NativeBinder.isSupported) return;
     try {
-      NativeBinder.call<void>('unknownMethod');
+      _channel.invokeMethod<void>('unknownMethod');
       setState(() => _errorDisplay = null);
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() {
         _errorDisplay =
             'message: ${e.message}\ncode: ${e.code}\ndetails: ${e.details}';
       });
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _callPrimitiveArguments() {
     if (!NativeBinder.isSupported) return;
     try {
-      final square = NativeBinder.call<int>('square', 7);
-      final area = NativeBinder.call<double>('circleArea', 5.0);
-      final inverted = NativeBinder.call<bool>('invertBool', true);
-      final reversed = NativeBinder.call<String>('reverseString', 'Hello');
+      final square = _channel.invokeMethod<int>('square', 7);
+      final area = _channel.invokeMethod<double>('circleArea', 5.0);
+      final inverted = _channel.invokeMethod<bool>('invertBool', true);
+      final reversed = _channel.invokeMethod<String>('reverseString', 'Hello');
       setState(() {
         _squareResult = square;
         _circleAreaResult = area;
@@ -183,15 +200,17 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
         _reverseStringResult = reversed;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
   void _callProcessUserInfo() {
     if (!NativeBinder.isSupported) return;
     try {
-      final result = NativeBinder.call<String>('processUserInfo', {
+      final result = _channel.invokeMethod<String>('processUserInfo', {
         'name': 'Alice',
         'age': 28,
         'city': 'San Francisco',
@@ -200,8 +219,10 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
         _processUserInfoResult = result;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 
@@ -209,13 +230,15 @@ class _NativeBinderExampleScreenState extends State<NativeBinderExampleScreen> {
     if (!NativeBinder.isSupported) return;
     try {
       // This calls a native method that will in turn call back to Dart
-      final result = NativeBinder.call<String>('testDartCallback');
+      final result = _channel.invokeMethod<String>('testDartCallback');
       setState(() {
         _nativeToDartResult = result;
         _errorDisplay = null;
       });
-    } on NativeBinderException catch (e) {
+    } on PlatformException catch (e) {
       setState(() => _errorDisplay = '${e.message} (code: ${e.code})');
+    } on MissingPluginException catch (e) {
+      setState(() => _errorDisplay = e.toString());
     }
   }
 

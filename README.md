@@ -1,14 +1,16 @@
 # native_binder
 
-**Synchronous bidirectional bridge** between Dart and native code: call Kotlin/Swift from Dart AND call Dart from Kotlin/Swift with a single API—no `MethodChannel`, no async.
+**Synchronous bidirectional bridge** between Dart and native code: call Kotlin/Swift from Dart AND call Dart from Kotlin/Swift—no async overhead. API compatible with `MethodChannel` but fully synchronous.
 
 ## Features
 
-- **Dart → Native calls**: `NativeBinder.call<T>(method, args)` blocks and returns the decoded result.
-- **Native → Dart calls**: `NativeBinderBridge.callDart<T>(method, args)` (Kotlin) or `callDartHandler(method, args)` (Swift).
+- **MethodChannel-compatible API**: Instance-based channels, `invokeMethod()`, `setMethodCallHandler()`, `MethodCall`, `PlatformException`.
+- **Synchronous calls**: Unlike MethodChannel, all operations block and return immediately—no `Future` or `async`/`await`.
+- **Dart → Native calls**: `channel.invokeMethod<T>(method, arguments)` blocks and returns the decoded result.
+- **Native → Dart calls**: `channel.invokeMethod<T>(method, arguments)` (Kotlin/Swift).
 - **Typed interchange**: String, int, double, bool, List, Map (and null) in both directions, using the same binary format as Flutter's `StandardMessageCodec`.
-- **Android**: Dart ⟷ FFI ⟷ C ABI ⟷ JNI ⟷ Kotlin. Register handlers by method name.
-- **iOS**: Dart ⟷ FFI ⟷ C ABI ⟷ Swift. Same registration pattern.
+- **Android**: Dart ⟷ FFI ⟷ C ABI ⟷ JNI ⟷ Kotlin.
+- **iOS**: Dart ⟷ FFI ⟷ C ABI ⟷ Swift.
 
 Heavy work on the calling thread blocks the Dart isolate or native thread; avoid long-running work.
 
@@ -21,7 +23,7 @@ dependencies:
   native_binder: ^0.0.1
 ```
 
-Use it only on Android and iOS; on other platforms `NativeBinder.isSupported` is false and `call` throws.
+Use it only on Android and iOS; on other platforms `NativeBinder.isSupported` is false and `invokeMethod` throws.
 
 ## Usage
 
@@ -31,38 +33,51 @@ Use it only on Android and iOS; on other platforms `NativeBinder.isSupported` is
 ```dart
 import 'package:native_binder/native_binder.dart';
 
-// Check support (e.g. before calling)
+// Create a channel instance (like MethodChannel)
+final channel = NativeBinder('my_channel');
+
+// Check support
 if (NativeBinder.isSupported) {
-  final result = NativeBinder.call<String>('echo', 'hello');
+  final result = channel.invokeMethod<String>('echo', 'hello');
   print(result); // hello
 }
 
 // Primitives and collections
-final n = NativeBinder.call<int>('getCount');
-final list = NativeBinder.call<List<dynamic>>('getItems');
-final map = NativeBinder.call<Map<dynamic, dynamic>>('getConfig');
+final n = channel.invokeMethod<int>('getCount');
+final list = channel.invokeMethod<List<dynamic>>('getItems');
+final map = channel.invokeMethod<Map<dynamic, dynamic>>('getConfig');
 
 // Error handling
 try {
-  NativeBinder.call<void>('unknownMethod');
-} on NativeBinderException catch (e) {
+  channel.invokeMethod<void>('unknownMethod');
+} on PlatformException catch (e) {
   print('Error: ${e.message} (code: ${e.code})');
+} on MissingPluginException catch (e) {
+  print('Plugin not available: ${e.message}');
 }
 ```
 
 **Android (Kotlin) - Register native handlers:**
 ```kotlin
-import com.native_binder.NativeBinderBridge
+import com.native_binder.NativeBinder
 
-NativeBinderBridge.register("echo") { args ->
-  args  // Echo back the value
-}
+// Create channel instance
+val channel = NativeBinder.createChannel("my_channel")
 
-NativeBinderBridge.register("getCount") { _ -> 42 }
+// Set single handler for all methods (like MethodChannel)
+channel.setMethodCallHandler { call ->
+  when (call.method) {
+    "echo" -> call.arguments  // Echo back the value
 
-NativeBinderBridge.register("add") { args ->
-  val list = args as List<*>
-  (list[0] as Int) + (list[1] as Int)
+    "getCount" -> 42
+
+    "add" -> {
+      val list = call.arguments as List<*>
+      (list[0] as Int) + (list[1] as Int)
+    }
+
+    else -> throw NotImplementedError("Method not implemented")
+  }
 }
 ```
 
@@ -70,37 +85,53 @@ NativeBinderBridge.register("add") { args ->
 ```swift
 import native_binder
 
-registerNativeBinderHandler("echo") { args in
-  return args
-}
+// Create channel instance
+let channel = NativeBinder.createChannel("my_channel")
 
-registerNativeBinderHandler("getCount") { _ in 42 }
+// Set single handler for all methods (like MethodChannel)
+channel.setMethodCallHandler { call in
+  switch call.method {
+  case "echo":
+    return call.arguments
 
-registerNativeBinderHandler("add") { args in
-  let list = args as! [Any]
-  return (list[0] as! Int) + (list[1] as! Int)
+  case "getCount":
+    return 42
+
+  case "add":
+    let list = call.arguments as! [Any]
+    return (list[0] as! Int) + (list[1] as! Int)
+
+  default:
+    throw NSError(domain: "NativeBinder", code: -2,
+                  userInfo: [NSLocalizedDescriptionKey: "Method not implemented"])
+  }
 }
 ```
 
 ### Native → Dart Calls
 
-**Dart side - Initialize and register handlers:**
+**Dart side - Register handlers:**
 ```dart
 import 'package:native_binder/native_binder.dart';
 
 void main() {
-  // Initialize bidirectional binding (required for Native→Dart)
-  NativeBinder.initialize();
+  // Create channel instance
+  final channel = NativeBinder('my_channel');
 
-  // Register Dart handlers
-  NativeBinder.register('greet', (args) {
-    final name = (args as List)[0] as String;
-    return 'Hello from Dart, $name!';
-  });
+  // Set handler for calls from native (MethodChannel-style)
+  channel.setMethodCallHandler((call) {
+    switch (call.method) {
+      case 'greet':
+        final name = (call.arguments as List)[0] as String;
+        return 'Hello from Dart, $name!';
 
-  NativeBinder.register('multiply', (args) {
-    final list = args as List;
-    return (list[0] as num) * (list[1] as num);
+      case 'multiply':
+        final list = call.arguments as List;
+        return (list[0] as num) * (list[1] as num);
+
+      default:
+        throw MissingPluginException();
+    }
   });
 
   runApp(MyApp());
@@ -109,18 +140,20 @@ void main() {
 
 **Android (Kotlin) - Call Dart handlers:**
 ```kotlin
-import com.native_binder.NativeBinderBridge
+import com.native_binder.NativeBinder
+
+val channel = NativeBinder.createChannel("my_channel")
 
 // Call Dart handler from Kotlin
-val greeting = NativeBinderBridge.callDart<String>("greet", listOf("Android"))
+val greeting = channel.invokeMethod<String>("greet", listOf("Android"))
 println(greeting)  // "Hello from Dart, Android!"
 
-val product = NativeBinderBridge.callDart<Number>("multiply", listOf(6, 7))
+val product = channel.invokeMethod<Number>("multiply", listOf(6, 7))
 println(product)  // 42
 
 // Error handling
 try {
-  NativeBinderBridge.callDart<String>("unknownMethod")
+  channel.invokeMethod<String>("unknownMethod")
 } catch (e: RuntimeException) {
   println("Error: ${e.message}")
 }
@@ -130,12 +163,14 @@ try {
 ```swift
 import native_binder
 
+let channel = NativeBinder.createChannel("my_channel")
+
 do {
   // Call Dart handler from Swift
-  let greeting = try callDartHandler("greet", args: ["iOS"]) as? String
+  let greeting = try channel.invokeMethod("greet", arguments: ["iOS"]) as? String
   print(greeting ?? "")  // "Hello from Dart, iOS!"
 
-  let product = try callDartHandler("multiply", args: [6, 7]) as? NSNumber
+  let product = try channel.invokeMethod("multiply", arguments: [6, 7]) as? NSNumber
   print(product ?? 0)  // 42
 } catch {
   print("Error: \(error.localizedDescription)")
@@ -211,11 +246,12 @@ Navigate to **Performance Test** from the home screen, choose an iteration count
 
 ## Additional information
 
-- **Initialization**: For Native→Dart calls, you must call `NativeBinder.initialize()` once before native code can invoke Dart handlers. Safe to call multiple times.
+- **MethodChannel compatibility**: NativeBinder uses the same API pattern as MethodChannel (instance-based channels, `invokeMethod`, `setMethodCallHandler`, `MethodCall`, `PlatformException`), but all calls are synchronous instead of async.
+- **Initialization**: Calling `setMethodCallHandler()` automatically initializes the bidirectional binding. No explicit initialization required.
 - **Error handling**:
-  - Dart→Native: Native throws → Dart receives `NativeBinderException` with code, message, and details.
-  - Native→Dart: Dart throws → Native receives `RuntimeException` (Android) or `NSError` (iOS).
+  - Dart→Native: Native throws → Dart receives `PlatformException` with code, message, and details, or `MissingPluginException` if platform not supported.
+  - Native→Dart: Dart throws `MissingPluginException` → Native receives exception with "NOT_IMPLEMENTED" code. Dart throws `PlatformException` → Native receives exception with the same code/message.
 - **Thread safety**: Dart handlers run on the Dart isolate thread. Native handlers run on the calling thread.
 - **Memory management**: Both directions properly allocate and free buffers automatically.
-- **Plugin layout**: This package is a Flutter plugin that ships the C ABI and native code for Android and iOS. Other plugins can depend on it and register their own handlers.
+- **Plugin layout**: This package is a Flutter plugin that ships the C ABI and native code for Android and iOS. Other plugins can depend on it and create their own channels.
 - **See also**: Check the [example app](example/) for complete demonstrations of all features.

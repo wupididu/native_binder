@@ -19,7 +19,7 @@ public func native_binder_call(
 ) -> UnsafeMutablePointer<UInt8>? {
     guard let msg = msg, let out_len = out_len else { return nil }
     let input = Data(bytes: msg, count: Int(len))
-    let output = handleCall(input)
+    let output = NativeBinder.handleCall(input)
     out_len.pointee = UInt32(output.count)
     if output.isEmpty {
         let ptr = UnsafeMutablePointer<UInt8>.allocate(capacity: 1)
