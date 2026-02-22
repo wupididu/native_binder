@@ -31,10 +31,19 @@ class TimingStatistics {
   final double min;
   final double max;
   final double stdDev;
+  final double p10;
+  final double p25;
   final double p50; // Median
+  final double p75;
+  final double p90;
   final double p95;
   final double p99;
+  final double p99_9;
   final double coefficientOfVariation;
+  final double skewness;
+  final double kurtosis;
+  final double interquartileRange;
+  final int outlierCount;
   final List<double> rawValues;
 
   const TimingStatistics({
@@ -42,10 +51,19 @@ class TimingStatistics {
     required this.min,
     required this.max,
     required this.stdDev,
+    required this.p10,
+    required this.p25,
     required this.p50,
+    required this.p75,
+    required this.p90,
     required this.p95,
     required this.p99,
+    required this.p99_9,
     required this.coefficientOfVariation,
+    required this.skewness,
+    required this.kurtosis,
+    required this.interquartileRange,
+    required this.outlierCount,
     required this.rawValues,
   });
 
@@ -56,40 +74,82 @@ class TimingStatistics {
         min: 0,
         max: 0,
         stdDev: 0,
+        p10: 0,
+        p25: 0,
         p50: 0,
+        p75: 0,
+        p90: 0,
         p95: 0,
         p99: 0,
+        p99_9: 0,
         coefficientOfVariation: 0,
+        skewness: 0,
+        kurtosis: 0,
+        interquartileRange: 0,
+        outlierCount: 0,
         rawValues: [],
       );
     }
 
     final sorted = List<double>.from(values)..sort();
-    final mean = values.reduce((a, b) => a + b) / values.length;
+    final n = values.length;
+    final mean = values.reduce((a, b) => a + b) / n;
     final min = sorted.first;
     final max = sorted.last;
 
     // Calculate standard deviation
-    final variance = values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / values.length;
+    final variance = values.map((v) => (v - mean) * (v - mean)).reduce((a, b) => a + b) / n;
     final stdDev = variance > 0 ? variance.sqrt() : 0.0;
 
     // Calculate percentiles
+    final p10 = _percentile(sorted, 0.10);
+    final p25 = _percentile(sorted, 0.25);
     final p50 = _percentile(sorted, 0.50);
+    final p75 = _percentile(sorted, 0.75);
+    final p90 = _percentile(sorted, 0.90);
     final p95 = _percentile(sorted, 0.95);
     final p99 = _percentile(sorted, 0.99);
+    final p99_9 = _percentile(sorted, 0.999);
 
     // Coefficient of variation (relative standard deviation)
     final cv = mean > 0 ? (stdDev / mean) : 0.0;
+
+    // Interquartile range
+    final iqr = p75 - p25;
+
+    // Calculate skewness: E[((X - mean) / stdDev)³]
+    final skewness = stdDev > 0
+        ? values.map((v) => ((v - mean) / stdDev).pow(3)).reduce((a, b) => a + b) / n
+        : 0.0;
+
+    // Calculate kurtosis (excess kurtosis): E[((X - mean) / stdDev)⁴] - 3
+    final kurtosis = stdDev > 0
+        ? (values.map((v) => ((v - mean) / stdDev).pow(4)).reduce((a, b) => a + b) / n) - 3
+        : 0.0;
+
+    // Count outliers (values beyond p75 + 1.5 * IQR or below p25 - 1.5 * IQR)
+    final lowerBound = p25 - 1.5 * iqr;
+    final upperBound = p75 + 1.5 * iqr;
+    final outlierCount = values.where((v) => v < lowerBound || v > upperBound).length;
 
     return TimingStatistics(
       mean: mean,
       min: min,
       max: max,
       stdDev: stdDev,
+      p10: p10,
+      p25: p25,
       p50: p50,
+      p75: p75,
+      p90: p90,
       p95: p95,
       p99: p99,
+      p99_9: p99_9,
       coefficientOfVariation: cv,
+      skewness: skewness,
+      kurtosis: kurtosis,
+      interquartileRange: iqr,
+      outlierCount: outlierCount,
       rawValues: List.unmodifiable(values),
     );
   }
@@ -103,15 +163,46 @@ class TimingStatistics {
     return sortedValues[lower] * (1 - weight) + sortedValues[upper] * weight;
   }
 
+  /// Get a percentile value at any percentile (0.0 to 1.0)
+  double getPercentileValue(double percentile) {
+    if (rawValues.isEmpty) return 0;
+    final sorted = List<double>.from(rawValues)..sort();
+    return _percentile(sorted, percentile);
+  }
+
+  /// Get interpretation of skewness
+  String get skewnessInterpretation {
+    if (skewness.abs() < 0.5) return 'Symmetric';
+    if (skewness > 0) return 'Right-skewed (tail extends right)';
+    return 'Left-skewed (tail extends left)';
+  }
+
+  /// Get consistency rating based on coefficient of variation
+  String get consistencyRating {
+    if (coefficientOfVariation < 0.1) return 'Excellent consistency';
+    if (coefficientOfVariation < 0.25) return 'Good consistency';
+    if (coefficientOfVariation < 0.5) return 'Moderate consistency';
+    return 'High variance';
+  }
+
   Map<String, dynamic> toJson() => {
         'mean': mean,
         'min': min,
         'max': max,
         'stdDev': stdDev,
+        'p10': p10,
+        'p25': p25,
         'p50': p50,
+        'p75': p75,
+        'p90': p90,
         'p95': p95,
         'p99': p99,
+        'p99_9': p99_9,
         'coefficientOfVariation': coefficientOfVariation,
+        'skewness': skewness,
+        'kurtosis': kurtosis,
+        'interquartileRange': interquartileRange,
+        'outlierCount': outlierCount,
       };
 }
 
@@ -256,5 +347,23 @@ extension DoubleExtensions on double {
       y = (x + this / x) / 2;
     }
     return x;
+  }
+
+  double pow(int exponent) {
+    if (exponent == 0) return 1.0;
+    if (exponent == 1) return this;
+    double result = 1.0;
+    double base = this;
+    int exp = exponent.abs();
+
+    while (exp > 0) {
+      if (exp % 2 == 1) {
+        result *= base;
+      }
+      base *= base;
+      exp ~/= 2;
+    }
+
+    return exponent < 0 ? 1.0 / result : result;
   }
 }

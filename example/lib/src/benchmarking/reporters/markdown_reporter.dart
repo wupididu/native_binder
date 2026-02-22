@@ -98,6 +98,49 @@ class MarkdownReporter {
     }
 
     buffer.writeln();
+    buffer.writeln('### Percentile Distribution (NativeBinder)');
+    buffer.writeln();
+    buffer.writeln('All times in microseconds (µs).');
+    buffer.writeln();
+    buffer.writeln('| Scenario | P10 | P25 | P50 | P75 | P90 | P95 | P99 | P99.9 |');
+    buffer.writeln('|----------|-----|-----|-----|-----|-----|-----|-----|-------|');
+
+    for (final result in results) {
+      final stats = result.nativeBinderTotal;
+      buffer.writeln([
+        '| ${result.name}',
+        _formatMicros(stats.p10),
+        _formatMicros(stats.p25),
+        _formatMicros(stats.p50),
+        _formatMicros(stats.p75),
+        _formatMicros(stats.p90),
+        _formatMicros(stats.p95),
+        _formatMicros(stats.p99),
+        '${_formatMicros(stats.p99_9)} |',
+      ].join(' | '));
+    }
+
+    buffer.writeln();
+    buffer.writeln('### Statistical Analysis');
+    buffer.writeln();
+    buffer.writeln('| Scenario | Consistency | Skewness | IQR (µs) | Outliers | Kurtosis |');
+    buffer.writeln('|----------|-------------|----------|----------|----------|----------|');
+
+    for (final result in results) {
+      final stats = result.nativeBinderTotal;
+      final outlierPercent = (stats.outlierCount / stats.rawValues.length * 100).toStringAsFixed(1);
+
+      buffer.writeln([
+        '| ${result.name}',
+        stats.consistencyRating,
+        stats.skewnessInterpretation,
+        _formatMicros(stats.interquartileRange),
+        '${stats.outlierCount} ($outlierPercent%)',
+        '${stats.kurtosis.toStringAsFixed(2)} |',
+      ].join(' | '));
+    }
+
+    buffer.writeln();
     buffer.writeln('### Timing Breakdown by Phase');
     buffer.writeln();
     buffer.writeln('| Scenario | Encode (µs) | Native (µs) | Decode (µs) | Total (µs) |');

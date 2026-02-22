@@ -177,6 +177,63 @@ do {
 }
 ```
 
+## Performance
+
+native_binder includes a comprehensive performance testing framework with detailed statistical analysis. The example app includes a performance test screen that compares NativeBinder against MethodChannel across various scenarios.
+
+### Statistical Metrics
+
+The performance tests provide extensive statistical analysis including:
+
+- **Extended Percentiles**: P10, P25, P50 (median), P75, P90, P95, P99, and P99.9
+- **Distribution Metrics**:
+  - **Skewness**: Measures distribution asymmetry (symmetric, right-skewed, or left-skewed)
+  - **Kurtosis**: Measures tail heaviness (light tails, normal tails, or heavy tails)
+  - **Interquartile Range (IQR)**: P75 - P25, measuring statistical dispersion
+  - **Outlier Detection**: Identifies values beyond P75 + 1.5×IQR or below P25 - 1.5×IQR
+- **Consistency Rating**: Based on coefficient of variation (CV):
+  - CV < 0.1: Excellent consistency
+  - CV < 0.25: Good consistency
+  - CV < 0.5: Moderate consistency
+  - CV ≥ 0.5: High variance
+
+### Visualization Features
+
+The performance test screen offers three viewing modes:
+
+1. **Table Mode**: Compact statistical summary with mean±SD, percentiles, and speedup
+2. **Charts Mode**:
+   - Timing breakdown (encode/native/decode phases)
+   - Speedup comparison across scenarios
+   - Enhanced box plots showing P10, P25, P50, P75, P90, P95, and P99
+3. **Distribution Mode**:
+   - Statistical summary cards (consistency, outliers, most/least consistent scenarios)
+   - Percentile summary table showing all percentiles for each scenario
+   - Distribution histograms with percentile markers
+   - Detailed percentile distribution tables (expandable per scenario)
+   - Statistical analysis cards with interpretive metrics
+
+### Export Formats
+
+Results can be exported in multiple formats:
+
+- **Markdown**: Formatted tables with percentile distribution and statistical analysis
+- **CSV**: Machine-readable format with all metrics (50+ columns including extended percentiles and distribution stats)
+- **JSON**: Complete structured data export for programmatic analysis
+
+### Running Performance Tests
+
+To run the performance tests:
+
+1. Open the example app
+2. Navigate to the "Performance Test" screen
+3. Select number of iterations (100-2000)
+4. Tap "Run All Benchmarks"
+5. Switch between Table/Charts/Distribution modes to view results
+6. Export results using the download menu
+
+The test suite includes 11 scenarios covering primitives, strings (1KB-100KB), lists (100-10K items), maps, nested structures, and mixed collections.
+
 ## How it works
 
 ### Dart → Native

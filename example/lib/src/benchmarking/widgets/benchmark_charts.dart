@@ -295,7 +295,7 @@ class StatisticalDistributionChart extends StatelessWidget {
         Text('Timing Distribution (µs)', style: Theme.of(context).textTheme.titleMedium),
         const SizedBox(height: 4),
         Text(
-          'Box plot showing min, P50 (median), P95, and max values',
+          'Box plot showing P10, P25, P50 (median), P75, P90, P95, and P99 values',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(color: Colors.grey.shade600),
         ),
         const SizedBox(height: 8),
@@ -374,19 +374,33 @@ class StatisticalDistributionChart extends StatelessWidget {
       return BarChartGroupData(
         x: index,
         barRods: [
-          // Whisker (min to P95)
+          // Whisker (P10 to P90)
           BarChartRodData(
-            fromY: stats.min,
-            toY: stats.p95,
-            color: Colors.blue.withValues(alpha: 0.3),
+            fromY: stats.p10,
+            toY: stats.p90,
+            color: Colors.blue.withValues(alpha: 0.25),
             width: 2,
           ),
-          // Box (P50 to P95)
+          // IQR Box (P25 to P75)
           BarChartRodData(
-            fromY: stats.p50,
-            toY: stats.p95,
-            color: Colors.blue.withValues(alpha: 0.7),
+            fromY: stats.p25,
+            toY: stats.p75,
+            color: Colors.blue.withValues(alpha: 0.6),
             width: 12,
+          ),
+          // Median line (P50)
+          BarChartRodData(
+            fromY: stats.p50 - 1,
+            toY: stats.p50 + 1,
+            color: Colors.orange,
+            width: 12,
+          ),
+          // Upper percentiles (P95 to P99)
+          BarChartRodData(
+            fromY: stats.p95,
+            toY: stats.p99,
+            color: Colors.red.withValues(alpha: 0.4),
+            width: 4,
           ),
         ],
       );

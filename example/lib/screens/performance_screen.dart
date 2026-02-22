@@ -7,8 +7,11 @@ import '../src/benchmarking/reporters/csv_reporter.dart';
 import '../src/benchmarking/reporters/json_reporter.dart';
 import '../src/benchmarking/reporters/markdown_reporter.dart';
 import '../src/benchmarking/widgets/benchmark_charts.dart';
+import '../src/benchmarking/widgets/distribution_histogram_chart.dart';
+import '../src/benchmarking/widgets/percentile_table.dart';
+import '../src/benchmarking/widgets/statistical_analysis.dart';
 
-enum DisplayMode { table, charts }
+enum DisplayMode { table, charts, distribution }
 
 class PerformanceScreen extends StatefulWidget {
   const PerformanceScreen({super.key});
@@ -149,8 +152,10 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
             const SizedBox(height: 16),
             if (_displayMode == DisplayMode.table)
               _buildResultsTable(theme)
+            else if (_displayMode == DisplayMode.charts)
+              _buildChartsView()
             else
-              _buildChartsView(),
+              _buildDistributionView(),
           ],
         ],
       ),
@@ -167,8 +172,9 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
             Text('Benchmark Configuration', style: theme.textTheme.titleMedium),
             const SizedBox(height: 12),
             const Text(
-              'Compares NativeBinder (FFI) vs MethodChannel with enhanced statistical analysis. '
-              'Includes percentile metrics (P50/P95/P99), standard deviation, and detailed timing breakdowns.',
+              'Compares NativeBinder (FFI) vs MethodChannel with comprehensive statistical analysis. '
+              'Includes extended percentiles (P10-P99.9), distribution histograms, skewness, kurtosis, '
+              'outlier detection, and detailed timing breakdowns.',
             ),
             const SizedBox(height: 16),
             Wrap(
@@ -298,6 +304,10 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
             value: DisplayMode.charts,
             label: Text('Charts'),
             icon: Icon(Icons.bar_chart)),
+        ButtonSegment(
+            value: DisplayMode.distribution,
+            label: Text('Distribution'),
+            icon: Icon(Icons.analytics)),
       ],
       selected: {_displayMode},
       onSelectionChanged: (Set<DisplayMode> newSelection) {
@@ -407,6 +417,58 @@ class _PerformanceScreenState extends State<PerformanceScreen> {
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: StatisticalDistributionChart(results: _report!.results),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildDistributionView() {
+    if (_report == null) return const SizedBox();
+
+    return Column(
+      children: [
+        // Statistical summary cards
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: StatisticalSummaryCards(report: _report!),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Percentile summary table
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: PercentileSummaryTable(results: _report!.results),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Distribution histograms for each scenario
+        if (_report!.results.isNotEmpty)
+          Card(
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: DistributionHistogramChart(
+                result: _report!.results.first,
+                showNativeBinder: true,
+              ),
+            ),
+          ),
+        const SizedBox(height: 16),
+        // Detailed percentile distribution table
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: PercentileDistributionTable(results: _report!.results),
+          ),
+        ),
+        const SizedBox(height: 16),
+        // Statistical analysis section
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: StatisticalAnalysisSection(results: _report!.results),
           ),
         ),
       ],
