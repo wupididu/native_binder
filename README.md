@@ -196,54 +196,6 @@ do {
 
 Both directions use the same encoding/error envelope format for consistency.
 
-## Performance
-
-NativeBinder's FFI-based approach is significantly faster than Flutter's MethodChannel for synchronous round-trip calls. The example app includes a built-in benchmark that compares the two across a range of payload sizes and types.
-
-<p align="center">
-  <img src="screenshots/performance_benchmark_android.png" width="320" alt="Performance benchmark results on Android" />
-</p>
-
-### Benchmark scenarios
-
-Each scenario echo-round-trips data to native and back. Results are averaged over configurable iterations (100–2,000).
-
-| Scenario | Description |
-|---|---|
-| Int pass-through | Single integer round-trip |
-| String 1–100 KB | String echo at various sizes |
-| List 100–10K ints | Integer list round-trip at various lengths |
-| Map 100–1K entries | Key-value pair round-trip |
-| Nested structure | Nested maps + lists (breadth=3, depth=4) |
-| Mixed list | 500 items mixing strings, ints, doubles, bools, and nulls |
-
-### Typical results (Android)
-
-| Scenario | FFI (μs) | MethodChannel (μs) | Speedup |
-|---|---|---|---|
-| Int pass-through | 35 | 251 | **7.1x** |
-| String 1 KB | 86 | 344 | **4.0x** |
-| String 10 KB | 96 | 556 | **5.8x** |
-| String 100 KB | 481 | 2,449 | **5.1x** |
-| List 100 ints | 53 | 257 | **4.8x** |
-| List 1K ints | 234 | 1,108 | **4.7x** |
-| List 10K ints | 1,944 | 9,263 | **4.8x** |
-| Map 100 entries | 139 | 615 | **4.4x** |
-| Map 1K entries | 979 | 4,376 | **4.5x** |
-| Nested structure | 358 | 1,697 | **4.7x** |
-| Mixed list | 174 | 926 | **5.3x** |
-
-> **~5x average speedup, up to 7x** on lightweight payloads. Results vary by device and payload; run the benchmark on your own hardware via the example app's Performance Test screen.
-
-### Running the benchmark
-
-```bash
-cd example
-flutter run
-```
-
-Navigate to **Performance Test** from the home screen, choose an iteration count, and tap **Run All Benchmarks**.
-
 ## Additional information
 
 - **MethodChannel compatibility**: NativeBinder uses the same API pattern as MethodChannel (instance-based channels, `invokeMethod`, `setMethodCallHandler`, `MethodCall`, `PlatformException`), but all calls are synchronous instead of async.

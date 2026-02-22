@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 
 import 'native_binder_example_screen.dart';
-import 'performance_test_screen.dart';
+import 'performance_screen.dart';
 
 class HomeScreen extends StatelessWidget {
   const HomeScreen({super.key});
@@ -52,19 +52,20 @@ class HomeScreen extends StatelessWidget {
                 label: const Text('Feature Examples'),
               ),
               const SizedBox(height: 16),
+              const SizedBox(height: 16),
               FilledButton.icon(
                 onPressed: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(
-                      builder: (_) => const PerformanceTestScreen(),
+                      builder: (_) => const PerformanceScreen(),
                     ),
                   );
                 },
-                icon: const Icon(Icons.speed),
+                icon: const Icon(Icons.bar_chart),
                 label: const Text('Performance Test'),
                 style: FilledButton.styleFrom(
-                  backgroundColor: Colors.purple,
+                  backgroundColor: Colors.deepPurple,
                 ),
               ),
             ],
